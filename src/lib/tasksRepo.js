@@ -30,11 +30,23 @@ async function seedTasks(db, tags) {
   return tasks;
 }
 
-export async function listTasks(tags) {
-  const db = await getDB();
-  const existing = await db.getAll("tasks");
-  if (existing.length > 0) return existing;
-  return seedTasks(db, tags);
+// In-flight lock, not a permanent cache — see tagsRepo.js for why.
+let inFlight = null;
+
+export function listTasks(tags) {
+  if (!inFlight) {
+    inFlight = (async () => {
+      try {
+        const db = await getDB();
+        const existing = await db.getAll("tasks");
+        if (existing.length > 0) return existing;
+        return await seedTasks(db, tags);
+      } finally {
+        inFlight = null;
+      }
+    })();
+  }
+  return inFlight;
 }
 
 export async function putTask(task) {

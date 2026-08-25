@@ -1,12 +1,34 @@
+import { useState } from "react";
 import TasksView from "./views/TasksView.jsx";
+import MatrixView from "./views/MatrixView.jsx";
+import CalendarView from "./views/CalendarView.jsx";
+import CountdownsView from "./views/CountdownsView.jsx";
+import TemplatesView from "./views/TemplatesView.jsx";
+import TagsView from "./views/TagsView.jsx";
+import HoursView from "./views/HoursView.jsx";
+import { NavBar } from "./components/NavBar.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
-// Nav shell (§7 "Navigation shell") isn't decided yet — this renders the
-// Tasks view directly until more views land and an IA decision is made.
+const VIEWS = {
+  tasks: TasksView,
+  matrix: MatrixView,
+  calendar: CalendarView,
+  countdowns: CountdownsView,
+  templates: TemplatesView,
+  tags: TagsView,
+  hours: HoursView,
+};
+
+// Settings and a home/dashboard view are explicitly out of scope for now —
+// see ARCHITECTURE.md §5 ("not built") and §7.
 export default function App() {
+  const [active, setActive] = useState("tasks");
+  const ActiveView = VIEWS[active];
+
   return (
     <>
-      <TasksView />
+      <ActiveView />
+      <NavBar active={active} onChange={setActive} />
       <UpdatePrompt />
     </>
   );
