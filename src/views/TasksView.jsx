@@ -1,0 +1,317 @@
+import { useRef, useState, useEffect } from "react";
+import { Plus } from "lucide-react";
+import { COLORS } from "../theme/colors.js";
+import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
+import { useClock } from "../hooks/useClock.js";
+import { useTags } from "../hooks/useTags.js";
+import { useTasks } from "../hooks/useTasks.js";
+import { Checkbox } from "../components/Checkbox.jsx";
+import { Toggle } from "../components/Toggle.jsx";
+import { SortSwitch } from "../components/SortSwitch.jsx";
+import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
+
+export default function TasksView() {
+  const { tags, loading: tagsLoading } = useTags();
+  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks(tags, tagsLoading);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [draftUrgent, setDraftUrgent] = useState(false);
+  const [draftImportant, setDraftImportant] = useState(false);
+  const [draftTags, setDraftTags] = useState([]);
+  const [sortBy, setSortBy] = useState("added");
+  const [filterTags, setFilterTags] = useState([]);
+  const inputRef = useRef(null);
+  const now = useClock();
+
+  useEffect(() => {
+    if (adding && inputRef.current) inputRef.current.focus();
+  }, [adding]);
+
+  const tagById = (id) => tags.find((t) => t.id === id);
+
+  const toggleDraftTag = (id) => {
+    setDraftTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const toggleFilterTag = (id) => {
+    setFilterTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const commitDraft = () => {
+    const trimmed = draft.trim();
+    if (trimmed) {
+      addTask({ text: trimmed, urgent: draftUrgent, important: draftImportant, tags: draftTags });
+    }
+    setDraft("");
+    setDraftUrgent(false);
+    setDraftImportant(false);
+    setDraftTags([]);
+    setAdding(false);
+  };
+
+  const cancelDraft = () => {
+    setDraft("");
+    setDraftUrgent(false);
+    setDraftImportant(false);
+    setDraftTags([]);
+    setAdding(false);
+  };
+
+  const remaining = tasks.filter((t) => !t.done).length;
+  const dateStr = now
+    .toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })
+    .toLowerCase();
+  const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  const filteredTasks =
+    filterTags.length === 0 ? tasks : tasks.filter((t) => t.tags.some((tid) => filterTags.includes(tid)));
+
+  const sortedTasks =
+    sortBy === "priority"
+      ? [...filteredTasks].sort((a, b) => {
+          const rankA = QUADRANTS[quadrantFor(a.urgent, a.important)].rank;
+          const rankB = QUADRANTS[quadrantFor(b.urgent, b.important)].rank;
+          return rankA - rankB;
+        })
+      : filteredTasks;
+
+  // grouped-by-tag view: each task grouped under its first tag; untagged tasks last
+  let tagGroups = null;
+  if (sortBy === "tag") {
+    tagGroups = tags
+      .map((tag) => ({ tag, tasks: filteredTasks.filter((t) => t.tags[0] === tag.id) }))
+      .filter((g) => g.tasks.length > 0);
+    const untagged = filteredTasks.filter((t) => t.tags.length === 0);
+    if (untagged.length > 0) tagGroups.push({ tag: null, tasks: untagged });
+  }
+
+  const renderTaskRow = (t) => {
+    const qKey = quadrantFor(t.urgent, t.important);
+    const q = QUADRANTS[qKey];
+    return (
+      <div
+        key={t.id}
+        className="task-row"
+        onClick={() => toggleTask(t.id)}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "10px",
+          padding: "14px 20px 14px 16px",
+          borderBottom: `1px solid ${COLORS.border}`,
+          borderLeft: `3px solid ${t.done ? COLORS.border : q.color}`,
+          cursor: "pointer",
+        }}
+      >
+        <Checkbox done={t.done} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: "14.5px",
+              lineHeight: "1.5",
+              color: t.done ? COLORS.dim : COLORS.text,
+              textDecorationLine: t.done ? "line-through" : "none",
+              textDecorationColor: COLORS.dim,
+              wordBreak: "break-word",
+            }}
+          >
+            {t.text}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
+            <span
+              style={{
+                fontSize: "10px",
+                letterSpacing: "0.5px",
+                color: t.done ? COLORS.dim : q.color,
+                textTransform: "uppercase",
+              }}
+            >
+              {q.label}
+            </span>
+            {t.tags.map((tid) => {
+              const tag = tagById(tid);
+              return tag ? <TagChip key={tid} tag={tag} small /> : null;
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const dataLoading = tagsLoading || tasksLoading;
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: COLORS.bg,
+        backgroundImage:
+          "repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 2px)",
+        fontFamily: "'IBM Plex Mono', monospace",
+        color: COLORS.text,
+        display: "flex",
+        justifyContent: "center",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: "420px", padding: "0 0 100px 0" }}>
+        {/* Header */}
+        <div style={{ padding: "28px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
+          <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
+            {dateStr} · {timeStr}
+          </div>
+          <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
+            ~/tasks
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "10px" }}>
+            <div style={{ fontSize: "12px", color: COLORS.dim }}>
+              {dataLoading ? "loading…" : `${remaining} open · ${tasks.length - remaining} done`}
+            </div>
+            <SortSwitch value={sortBy} onChange={setSortBy} />
+          </div>
+        </div>
+
+        {/* Tag filter bar */}
+        <div
+          className="filter-scroll"
+          style={{ display: "flex", gap: "6px", padding: "10px 20px", borderBottom: `1px solid ${COLORS.border}` }}
+        >
+          {tags.map((tag) => (
+            <TagPickerChip key={tag.id} tag={tag} active={filterTags.includes(tag.id)} onClick={() => toggleFilterTag(tag.id)} />
+          ))}
+        </div>
+
+        {/* Task list */}
+        <div>
+          {sortBy === "tag"
+            ? tagGroups.map((group) => (
+                <div key={group.tag ? group.tag.id : "untagged"}>
+                  <div
+                    style={{
+                      padding: "8px 20px",
+                      fontSize: "10.5px",
+                      letterSpacing: "0.5px",
+                      color: group.tag ? group.tag.color : COLORS.dim,
+                      background: COLORS.panel,
+                      borderBottom: `1px solid ${COLORS.border}`,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {group.tag ? group.tag.name : "untagged"}
+                  </div>
+                  {group.tasks.map(renderTaskRow)}
+                </div>
+              ))
+            : sortedTasks.map(renderTaskRow)}
+
+          {/* Inline add row */}
+          {adding && (
+            <div style={{ padding: "14px 20px", borderBottom: `1px solid ${COLORS.borderBright}`, background: COLORS.panel }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                <span style={{ color: COLORS.amber, fontSize: "15px", width: "30px", flexShrink: 0 }}>{"[ ]"}</span>
+                <input
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitDraft();
+                    if (e.key === "Escape") cancelDraft();
+                  }}
+                  placeholder="new task"
+                  className="task-input"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: COLORS.text,
+                    caretColor: COLORS.amber,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: "14.5px",
+                    flex: 1,
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <Toggle value={draftUrgent} onChange={setDraftUrgent} leftLabel="not urgent" rightLabel="urgent" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Toggle value={draftImportant} onChange={setDraftImportant} leftLabel="not important" rightLabel="important" />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "14px" }}>
+                {tags.map((tag) => (
+                  <TagPickerChip key={tag.id} tag={tag} active={draftTags.includes(tag.id)} onClick={() => toggleDraftTag(tag.id)} />
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  onClick={cancelDraft}
+                  style={{
+                    background: "none",
+                    border: `1px solid ${COLORS.border}`,
+                    color: COLORS.dim,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: "12.5px",
+                    padding: "7px 14px",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  cancel
+                </button>
+                <button
+                  onClick={commitDraft}
+                  disabled={!draft.trim()}
+                  style={{
+                    background: draft.trim() ? COLORS.amber : COLORS.border,
+                    border: "none",
+                    color: draft.trim() ? COLORS.bg : COLORS.dim,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: "12.5px",
+                    fontWeight: 600,
+                    padding: "7px 14px",
+                    borderRadius: "6px",
+                    cursor: draft.trim() ? "pointer" : "default",
+                  }}
+                >
+                  add
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!dataLoading && tasks.length === 0 && !adding && (
+            <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
+              // no tasks logged yet
+            </div>
+          )}
+        </div>
+
+        {/* FAB */}
+        {!adding && (
+          <button
+            className="fab"
+            onClick={() => setAdding(true)}
+            style={{
+              position: "fixed",
+              bottom: "28px",
+              right: "calc(50% - 210px + 20px)",
+              width: "52px",
+              height: "52px",
+              borderRadius: "8px",
+              background: COLORS.amber,
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: `0 0 20px rgba(255,176,0,0.35), 0 4px 12px rgba(0,0,0,0.5)`,
+              cursor: "pointer",
+            }}
+          >
+            <Plus size={24} color={COLORS.bg} strokeWidth={2.5} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

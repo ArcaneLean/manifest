@@ -1,0 +1,37 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.fab {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.fab:active {
+  transform: scale(0.94);
+}
+
+.task-row {
+  transition: background 0.12s ease;
+}
+.task-row:active {
+  background: #141310;
+}
+
+.task-input::placeholder {
+  color: #6b6459;
+  opacity: 1;
+}
+
+.filter-scroll {
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.filter-scroll::-webkit-scrollbar {
+  display: none;
+}
