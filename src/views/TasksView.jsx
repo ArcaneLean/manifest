@@ -9,6 +9,7 @@ import { Checkbox } from "../components/Checkbox.jsx";
 import { Toggle } from "../components/Toggle.jsx";
 import { SortSwitch } from "../components/SortSwitch.jsx";
 import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
+import { NAV_HEIGHT } from "../components/NavBar.jsx";
 
 export default function TasksView() {
   const { tags, loading: tagsLoading } = useTags();
@@ -153,7 +154,7 @@ export default function TasksView() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", padding: "0 0 100px 0" }}>
+      <div style={{ width: "100%", maxWidth: "420px", padding: `0 0 ${100 + NAV_HEIGHT}px 0` }}>
         {/* Header */}
         <div style={{ padding: "28px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
@@ -294,7 +295,7 @@ export default function TasksView() {
             onClick={() => setAdding(true)}
             style={{
               position: "fixed",
-              bottom: "28px",
+              bottom: `${28 + NAV_HEIGHT}px`,
               right: "calc(50% - 210px + 20px)",
               width: "52px",
               height: "52px",
