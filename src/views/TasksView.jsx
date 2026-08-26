@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Eye, EyeOff } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
@@ -21,12 +21,27 @@ export default function TasksView() {
   const [draftTags, setDraftTags] = useState([]);
   const [sortBy, setSortBy] = useState("added");
   const [filterTags, setFilterTags] = useState([]);
+  const [showCompleted, setShowCompleted] = useState(() => {
+    try {
+      return localStorage.getItem("manifest.tasks.showCompleted") === "true";
+    } catch {
+      return false;
+    }
+  });
   const inputRef = useRef(null);
   const now = useClock();
 
   useEffect(() => {
     if (adding && inputRef.current) inputRef.current.focus();
   }, [adding]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("manifest.tasks.showCompleted", String(showCompleted));
+    } catch {
+      // localStorage unavailable (private mode, etc.) — toggle just won't persist
+    }
+  }, [showCompleted]);
 
   const tagById = (id) => tags.find((t) => t.id === id);
 
@@ -64,8 +79,12 @@ export default function TasksView() {
     .toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
+  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
+
   const filteredTasks =
-    filterTags.length === 0 ? tasks : tasks.filter((t) => t.tags.some((tid) => filterTags.includes(tid)));
+    filterTags.length === 0
+      ? visibleTasks
+      : visibleTasks.filter((t) => t.tags.some((tid) => filterTags.includes(tid)));
 
   const sortedTasks =
     sortBy === "priority"
@@ -176,7 +195,26 @@ export default function TasksView() {
             <div style={{ fontSize: "12px", color: COLORS.dim }}>
               {dataLoading ? "loading…" : `${remaining} open · ${tasks.length - remaining} done`}
             </div>
-            <SortSwitch value={sortBy} onChange={setSortBy} />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <button
+                onClick={() => setShowCompleted((v) => !v)}
+                title={showCompleted ? "hide completed tasks" : "show completed tasks"}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "26px",
+                  height: "26px",
+                  background: "none",
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                {showCompleted ? <Eye size={13} color={COLORS.amber} /> : <EyeOff size={13} color={COLORS.dim} />}
+              </button>
+              <SortSwitch value={sortBy} onChange={setSortBy} />
+            </div>
           </div>
         </div>
 
@@ -293,6 +331,12 @@ export default function TasksView() {
           {!dataLoading && tasks.length === 0 && !adding && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
               // no tasks logged yet
+            </div>
+          )}
+
+          {!dataLoading && tasks.length > 0 && filteredTasks.length === 0 && !showCompleted && !adding && (
+            <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
+              // all done — tap <Eye size={11} style={{ verticalAlign: "middle" }} /> to see completed tasks
             </div>
           )}
         </div>
