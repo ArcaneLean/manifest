@@ -2,17 +2,13 @@ import { useEffect, useState } from "react";
 import { listTemplates, putTemplate, deleteTemplate } from "../lib/templatesRepo.js";
 import { toISO } from "../lib/dateUtils.js";
 
-// Waits for tags to finish loading (possibly seeding) before loading
-// templates, since template seeding needs real tag ids to reference —
-// mirrors useTasks.js.
-export function useTemplates(tags, tagsLoading) {
+export function useTemplates() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (tagsLoading) return;
     let cancelled = false;
-    listTemplates(tags).then((loaded) => {
+    listTemplates().then((loaded) => {
       if (!cancelled) {
         setTemplates(loaded);
         setLoading(false);
@@ -21,7 +17,7 @@ export function useTemplates(tags, tagsLoading) {
     return () => {
       cancelled = true;
     };
-  }, [tagsLoading]);
+  }, []);
 
   const addTemplate = ({ text, urgent, important, recurring, tags: templateTags }) => {
     const template = {

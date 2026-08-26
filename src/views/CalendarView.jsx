@@ -109,7 +109,7 @@ function DaySection({ date, tasks, onToggle, isToday }) {
 // here — see §7 "Calendar + unscheduled tasks".
 export default function CalendarView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { tasks, loading: tasksLoading, toggleTask, addTask } = useTasks(tags, tagsLoading);
+  const { tasks, loading: tasksLoading, toggleTask, addTask } = useTasks();
   const [mode, setMode] = useState("week");
   const today = startOfToday();
   const [anchor, setAnchor] = useState(today);

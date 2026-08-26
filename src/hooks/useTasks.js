@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
 import { listTasks, putTask, deleteTask } from "../lib/tasksRepo.js";
 
-// Waits for tags to finish loading (possibly seeding) before loading tasks,
-// since task seeding needs real tag ids to reference.
-export function useTasks(tags, tagsLoading) {
+export function useTasks() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (tagsLoading) return;
     let cancelled = false;
-    listTasks(tags).then((loaded) => {
+    listTasks().then((loaded) => {
       if (!cancelled) {
         setTasks(loaded);
         setLoading(false);
@@ -19,7 +16,7 @@ export function useTasks(tags, tagsLoading) {
     return () => {
       cancelled = true;
     };
-  }, [tagsLoading]);
+  }, []);
 
   const toggleTask = (id) => {
     setTasks((prev) => {

@@ -94,8 +94,8 @@ function TemplateRow({ template, today, tagById, onRun, onDelete }) {
 // ARCHITECTURE.md §5 ("writes: tasks (on run), templates").
 export default function TemplatesView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { addTask } = useTasks(tags, tagsLoading);
-  const { templates, loading: templatesLoading, addTemplate, removeTemplate, markRunToday } = useTemplates(tags, tagsLoading);
+  const { addTask } = useTasks();
+  const { templates, loading: templatesLoading, addTemplate, removeTemplate, markRunToday } = useTemplates();
   const [runLog, setRunLog] = useState([]);
   const [building, setBuilding] = useState(false);
   const [textDraft, setTextDraft] = useState("");
