@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { listTasks, putTask, deleteTask } from "../lib/tasksRepo.js";
 
+// Completed tasks older than this are purged automatically on load — there's
+// no settings view yet to make this configurable (see ARCHITECTURE.md §7).
+const COMPLETED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 export function useTasks() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -8,10 +12,14 @@ export function useTasks() {
   useEffect(() => {
     let cancelled = false;
     listTasks().then((loaded) => {
-      if (!cancelled) {
-        setTasks(loaded);
-        setLoading(false);
-      }
+      if (cancelled) return;
+      const cutoff = Date.now() - COMPLETED_RETENTION_MS;
+      const expiredIds = new Set(
+        loaded.filter((t) => t.done && t.completedAt && t.completedAt < cutoff).map((t) => t.id)
+      );
+      expiredIds.forEach((id) => deleteTask(id));
+      setTasks(loaded.filter((t) => !expiredIds.has(t.id)));
+      setLoading(false);
     });
     return () => {
       cancelled = true;
@@ -20,7 +28,9 @@ export function useTasks() {
 
   const toggleTask = (id) => {
     setTasks((prev) => {
-      const next = prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
+      const next = prev.map((t) =>
+        t.id === id ? { ...t, done: !t.done, completedAt: !t.done ? Date.now() : null } : t
+      );
       const updated = next.find((t) => t.id === id);
       if (updated) putTask(updated);
       return next;
@@ -36,6 +46,7 @@ export function useTasks() {
       important,
       tags: taskTags,
       createdAt: Date.now(),
+      completedAt: null,
     };
     setTasks((prev) => [...prev, task]);
     putTask(task);

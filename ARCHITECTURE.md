@@ -57,6 +57,8 @@ interface Task {
   date?: string;            // ISO yyyy-mm-dd, optional — ties into calendar view
   tags: string[];            // Tag ids
   createdAt: number;
+  completedAt: number | null; // set when `done` flips true, cleared when un-done;
+                               // drives the 30-day auto-purge of completed tasks
 }
 
 interface Tag {
