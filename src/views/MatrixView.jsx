@@ -91,7 +91,7 @@ function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
 // ("2x2 lens over the same task store, not separate data").
 export default function MatrixView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks(tags, tagsLoading);
+  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [urgent, setUrgent] = useState(true);

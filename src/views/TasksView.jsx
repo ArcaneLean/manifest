@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
@@ -13,7 +13,7 @@ import { NAV_HEIGHT } from "../components/NavBar.jsx";
 
 export default function TasksView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks(tags, tagsLoading);
+  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftUrgent, setDraftUrgent] = useState(false);
@@ -135,6 +135,15 @@ export default function TasksView() {
             })}
           </div>
         </div>
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            removeTask(t.id);
+          }}
+          style={{ cursor: "pointer", flexShrink: 0, paddingTop: "2px" }}
+        >
+          <X size={14} color={COLORS.dim} />
+        </span>
       </div>
     );
   };
