@@ -13,6 +13,10 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 - FOSS/self-hosted orientation — avoid vendor lock-in where reasonable.
 - No home-screen widgets: confirmed PWAs can't do this on Android or iOS today. A native
   companion widget is a separate, later decision if ever wanted — not part of this build.
+- No local/OS calendar read access: there's no Web Calendar API (the W3C proposal was
+  discontinued) — reading the device's native calendar (as TickTick does) requires a native
+  shell (e.g. Capacitor + a calendar plugin), which is out of scope for a PWA. Skipped for now;
+  see §7.
 
 ## 2. Stack decisions
 
@@ -152,6 +156,12 @@ These came up in the process and were deliberately deferred — listed here so t
 - **Calendar + unscheduled tasks**: tasks with no `date` are invisible in the calendar view.
   Decide if that's intentional (calendar = dated tasks only, task list = everything) or if an
   "unscheduled" tray is needed.
+- **Local/OS calendar integration (skipped)**: considered connecting the Calendar view to the
+  device's native calendar (read-only, no-login, like TickTick's "Subscribe Calendar"). Not
+  possible from a PWA — no browser exposes device calendar read access; that's a native-app-only
+  API (Android `CalendarContract`, iOS EventKit). Would require moving off pure PWA (e.g.
+  Capacitor + a calendar plugin), which conflicts with §1's PWA-only stance. If revisited without
+  going native, `.ics` import/export is the lightweight fallback — not started.
 - **Recurring template auto-instantiation**: browsers can't reliably run JS in the background
   while the PWA is closed. Realistic pattern is "check for overdue recurring templates on app
   open," not silent background creation — the UX copy/promise should match this.
