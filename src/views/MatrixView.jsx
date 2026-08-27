@@ -13,6 +13,7 @@ import { Toggle } from "../components/Toggle.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { ScheduledToggle } from "../components/ScheduledToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
+import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 
 function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
   const q = QUADRANTS[qKey];
@@ -148,6 +149,8 @@ export default function MatrixView() {
     <div
       style={{
         height: "100vh",
+        boxSizing: "border-box",
+        paddingTop: `${TOPBAR_HEIGHT}px`,
         background: COLORS.bg,
         backgroundImage:
           "repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 2px)",
@@ -158,7 +161,7 @@ export default function MatrixView() {
         overflow: "hidden",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", display: "flex", flexDirection: "column", height: "100vh" }}>
+      <div style={{ width: "100%", maxWidth: "420px", display: "flex", flexDirection: "column", height: "100%" }}>
         {/* Header */}
         <div style={{ padding: "24px 20px 14px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
