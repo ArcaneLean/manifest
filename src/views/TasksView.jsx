@@ -17,6 +17,7 @@ import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { ScheduledToggle } from "../components/ScheduledToggle.jsx";
 import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
+import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 
 export default function TasksView() {
   const { tags, loading: tagsLoading } = useTags();
@@ -214,7 +215,7 @@ export default function TasksView() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", padding: `0 0 ${100 + NAV_HEIGHT}px 0` }}>
+      <div style={{ width: "100%", maxWidth: "420px", padding: `${TOPBAR_HEIGHT}px 0 ${100 + NAV_HEIGHT}px 0` }}>
         {/* Header */}
         <div style={{ padding: "28px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>

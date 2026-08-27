@@ -11,6 +11,7 @@ import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
+import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { toISO, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
 
 // A task appears on its startDate day and/or its dueDate day — see
@@ -272,7 +273,7 @@ export default function CalendarView() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", padding: `0 0 ${100 + NAV_HEIGHT}px 0` }}>
+      <div style={{ width: "100%", maxWidth: "420px", padding: `${TOPBAR_HEIGHT}px 0 ${100 + NAV_HEIGHT}px 0` }}>
         {/* Header */}
         <div style={{ padding: "24px 20px 14px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>

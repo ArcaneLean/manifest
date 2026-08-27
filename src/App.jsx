@@ -1,34 +1,36 @@
 import { usePersistentState } from "./hooks/usePersistentState.js";
-import TasksView from "./views/TasksView.jsx";
-import MatrixView from "./views/MatrixView.jsx";
-import CalendarView from "./views/CalendarView.jsx";
-import CountdownsView from "./views/CountdownsView.jsx";
-import TemplatesView from "./views/TemplatesView.jsx";
-import TagsView from "./views/TagsView.jsx";
-import HoursView from "./views/HoursView.jsx";
-import { NavBar } from "./components/NavBar.jsx";
+import LauncherView from "./views/LauncherView.jsx";
+import TaskManagerApp from "./apps/TaskManagerApp.jsx";
+import CountdownsApp from "./apps/CountdownsApp.jsx";
+import HoursApp from "./apps/HoursApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
-const VIEWS = {
-  tasks: TasksView,
-  matrix: MatrixView,
-  calendar: CalendarView,
-  countdowns: CountdownsView,
-  templates: TemplatesView,
-  tags: TagsView,
-  hours: HoursView,
+const APPS = {
+  taskmanager: TaskManagerApp,
+  countdowns: CountdownsApp,
+  hours: HoursApp,
 };
 
-// Settings and a home/dashboard view are explicitly out of scope for now —
-// see ARCHITECTURE.md §5 ("not built") and §7.
+// Home screen launches into one of three apps; each app owns its own
+// internal navigation (Task Manager has a bottom nav over its 5 views,
+// Countdowns/Hours are single-view). See ARCHITECTURE.md §7.
 export default function App() {
-  const [active, setActive] = usePersistentState("manifest.nav.active", "tasks");
-  const ActiveView = VIEWS[active];
+  const [activeApp, setActiveApp] = usePersistentState("manifest.nav.app", "home");
+  const goHome = () => setActiveApp("home");
 
+  if (activeApp === "home" || !APPS[activeApp]) {
+    return (
+      <>
+        <LauncherView onOpen={setActiveApp} />
+        <UpdatePrompt />
+      </>
+    );
+  }
+
+  const ActiveApp = APPS[activeApp];
   return (
     <>
-      <ActiveView />
-      <NavBar active={active} onChange={setActive} />
+      <ActiveApp onHome={goHome} />
       <UpdatePrompt />
     </>
   );

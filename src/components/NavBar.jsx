@@ -1,20 +1,18 @@
-import { ListChecks, LayoutGrid, Calendar, Hourglass, Repeat, Tag, Clock } from "lucide-react";
+import { ListChecks, LayoutGrid, Calendar, Repeat, Tag } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 
-// Bottom tab bar — resolves ARCHITECTURE.md §7 "Navigation shell": 7 views
-// is too many for labeled tabs, so this goes icon-only (no overflow menu)
-// rather than force a curated bottom-5 + "more" split between views that
-// are all first-class per §5's table.
+// Bottom tab bar for the Task Manager app — its 5 views (all lenses over the
+// same task store, see ARCHITECTURE.md §5) fit a standard bottom nav.
+// Countdowns and Hours are separate apps launched from the home screen
+// (§7 "Navigation shell"), each with a single view and no sub-nav.
 export const NAV_HEIGHT = 56;
 
 const NAV_ITEMS = [
   { key: "tasks", label: "tasks", icon: ListChecks },
   { key: "matrix", label: "matrix", icon: LayoutGrid },
   { key: "calendar", label: "calendar", icon: Calendar },
-  { key: "countdowns", label: "countdowns", icon: Hourglass },
   { key: "templates", label: "templates", icon: Repeat },
   { key: "tags", label: "tags", icon: Tag },
-  { key: "hours", label: "hours", icon: Clock },
 ];
 
 export function NavBar({ active, onChange }) {

@@ -3,7 +3,7 @@ import { Plus, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 import { useCountdowns } from "../hooks/useCountdowns.js";
-import { NAV_HEIGHT } from "../components/NavBar.jsx";
+import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { parseISODate, startOfToday, nextOccurrence, daysBetween } from "../lib/dateUtils.js";
 
 function formatOriginalDate(d) {
@@ -88,7 +88,7 @@ export default function CountdownsView() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", padding: `0 0 ${100 + NAV_HEIGHT}px 0` }}>
+      <div style={{ width: "100%", maxWidth: "420px", padding: `${TOPBAR_HEIGHT}px 0 100px 0` }}>
         {/* Header */}
         <div style={{ padding: "28px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
@@ -234,7 +234,7 @@ export default function CountdownsView() {
             onClick={() => setAdding(true)}
             style={{
               position: "fixed",
-              bottom: `${28 + NAV_HEIGHT}px`,
+              bottom: "28px",
               right: "calc(50% - 210px + 20px)",
               width: "52px",
               height: "52px",

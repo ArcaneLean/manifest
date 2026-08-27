@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 import { useHours } from "../hooks/useHours.js";
-import { NAV_HEIGHT } from "../components/NavBar.jsx";
+import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { toISO, startOfToday, startOfWeekMonday, addDays } from "../lib/dateUtils.js";
 import { workedMinutes, formatMinutes } from "../lib/timeUtils.js";
 
@@ -125,7 +125,7 @@ export default function HoursView() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", padding: `0 0 ${60 + NAV_HEIGHT}px 0` }}>
+      <div style={{ width: "100%", maxWidth: "420px", padding: `${TOPBAR_HEIGHT}px 0 60px 0` }}>
         {/* Header */}
         <div style={{ padding: "28px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>

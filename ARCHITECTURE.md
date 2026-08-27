@@ -116,18 +116,28 @@ function quadrantFor(urgent: boolean, important: boolean) {
 }
 ```
 
-## 5. Views
+## 5. Apps & views
 
-| View | Route (suggested) | Reads | Writes | Notes |
-|---|---|---|---|---|
-| Tasks | `/tasks` | tasks, tags | tasks | list, sort by added/priority/tag, tag filter bar |
-| Countdowns | `/countdowns` | countdowns | countdowns | yearly recurrence, `[042]`-style counter |
-| Matrix | `/matrix` | tasks | tasks | 2×2 lens over the *same* task store — not separate data |
-| Calendar | `/calendar` | tasks | tasks | list (infinite scroll, forward-only)/week/month toggle |
-| Templates | `/templates` | templates, tags | tasks (on run), templates | single-task presets, optional recurrence |
-| Tags | `/tags` | tags | tags | CRUD, 8-color curated palette |
-| Hours | `/hours` | worklog, weektargets | worklog, weektargets | per-week configurable target |
-| *(not built)* | — | — | — | app shell/navigation, settings, home/dashboard |
+The product is an **ecosystem of small apps behind a home/launcher screen**, not one flat pile
+of views (see §7 "Navigation shell" for why). The launcher (`LauncherView.jsx`) lists the apps;
+each app owns its own internal navigation and is otherwise independent.
+
+| App | Views inside it | Sub-nav | Notes |
+|---|---|---|---|
+| Task manager | Tasks, Matrix, Calendar, Templates, Tags | bottom tab bar (5 tabs) | all 5 are lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than five launcher tiles |
+| Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
+| Hours | Hours | none (single view) | worklog + per-week configurable target |
+| *(not built)* | — | — | settings — see §7 |
+
+| View | Reads | Writes | Notes |
+|---|---|---|---|
+| Tasks | tasks, tags | tasks | list, sort by added/priority/tag, tag filter bar |
+| Countdowns | countdowns | countdowns | yearly recurrence, `[042]`-style counter |
+| Matrix | tasks | tasks | 2×2 lens over the *same* task store — not separate data |
+| Calendar | tasks | tasks | list (infinite scroll, forward-only)/week/month toggle |
+| Templates | templates, tags | tasks (on run), templates | single-task presets, optional recurrence |
+| Tags | tags | tags | CRUD, 8-color curated palette |
+| Hours | worklog, weektargets | worklog, weektargets | per-week configurable target |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -171,12 +181,22 @@ These came up in the process and were deliberately deferred — listed here so t
   needs a name (routines? checklists? playbooks?) and its own view if built.
 - **Work hours**: single session per day only (no split days). No export needed (confirmed).
   Weekly target is configurable per-week, defaulting to 40h.
-- **Navigation shell**: 8 views is too many for a standard bottom nav (~5 max). Needs a real
-  IA decision — overflow menu, drawer, or a curated bottom-5 + "more" — before this is usable
-  as a cohesive app rather than a pile of separate screens.
+- **Navigation shell (resolved)**: 7 views was too many for a standard bottom nav (~5 max), and
+  the earlier icon-only 7-wide bar (`NavBar.jsx`) was a stopgap, not a real IA decision. Resolved
+  by restructuring as an ecosystem: a home/launcher screen (`LauncherView.jsx`) lists three apps
+  — task manager, countdowns, hours — `App.jsx` switches between the launcher and the active
+  app's shell (`src/apps/*.jsx`), and each app owns its own internal nav. Task manager keeps the
+  5-tab bottom bar (`NavBar.jsx`, trimmed from 7 to the 5 task-store views); countdowns and hours
+  are single-view apps with no sub-nav. Every app shell renders a fixed `TopBar.jsx` (back arrow
+  + app name) so there's always a way back to the launcher independent of that app's own nav.
+  Top-level active app persists via `usePersistentState` (`manifest.nav.app`); task manager's
+  active tab persists separately (`manifest.taskmanager.active`).
 - **Settings view**: doesn't exist yet. Needed for at least: default week hour target, GitHub
   sync configuration, theme (if made configurable at all).
-- **Home/dashboard view**: mentioned early on as a possible landing view, never designed.
+- **Home/dashboard view (built)**: `LauncherView.jsx` is now the landing screen — an app
+  launcher (task manager / countdowns / hours tiles), not a data dashboard. A richer dashboard
+  (e.g. today's tasks + hours-this-week summary on the launcher itself) is a distinct,
+  still-undesigned future step if wanted.
 - **Start date / due date split (implemented)**: `Task.date` split into `startDate?` and
   `dueDate?` (§4). Tasks with a future `startDate` are hidden by default in Tasks and Matrix
   (they're not actionable yet), with a header icon toggle to reveal them —
