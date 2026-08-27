@@ -176,6 +176,25 @@ These came up in the process and were deliberately deferred — listed here so t
 - **Settings view**: doesn't exist yet. Needed for at least: default week hour target, GitHub
   sync configuration, theme (if made configurable at all).
 - **Home/dashboard view**: mentioned early on as a possible landing view, never designed.
+- **Start date / due date split (design decided, not yet implemented)**: `Task.date` will
+  eventually split into `startDate?` (task can't be worked before this) and `dueDate?` (should
+  be done by this, ideally before). Decisions made so far, to implement whenever this is picked
+  up:
+  - Due dates come in soft (self-imposed, "finish by Friday") and hard (external deadline)
+    flavors — needs a way to mark which, e.g. `dueDateStrict: boolean`. Not designed further yet.
+  - Tasks with a future `startDate` are hidden from the default task list (they're not
+    actionable yet), with a header toggle to reveal them — same small icon-button pattern as
+    `CompletedToggle` (`src/components/CompletedToggle.jsx`), sitting next to it.
+  - Calendar view: a task with both dates renders as two separate day markers (on `startDate`
+    and on `dueDate`), not a spanning bar across the days between. Simpler, and acceptable since
+    the calendar is a reference view — the task list (via the active/inactive split above) is
+    what actually drives "what's actionable now."
+  - Sorting: due date is the only date-based sort worth adding (`SortSwitch`,
+    `src/components/SortSwitch.jsx`). No sort-by-start-date — `startDate` is just the scheduled
+    moment a task flips from inactive to active, not something worth ordering by.
+  - Recurring templates generate `startDate` per instance; an optional due-offset on the
+    template (e.g. "+3 days") would generate `dueDate` per instance for cases like a weekly
+    timesheet (instantiated Monday, due Friday).
 
 ## 8. Suggested build order for Claude Code
 
