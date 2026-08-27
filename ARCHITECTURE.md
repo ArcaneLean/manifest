@@ -58,7 +58,8 @@ interface Task {
   done: boolean;
   urgent: boolean;
   important: boolean;      // urgent+important -> quadrant, see below
-  date?: string;            // ISO yyyy-mm-dd, optional — ties into calendar view
+  startDate?: string | null; // ISO yyyy-mm-dd — task isn't active/shown by default before this
+  dueDate?: string | null;   // ISO yyyy-mm-dd — should be done by this date, ideally before
   tags: string[];            // Tag ids
   createdAt: number;
   completedAt: number | null; // set when `done` flips true, cleared when un-done;
@@ -153,9 +154,9 @@ These came up in the process and were deliberately deferred — listed here so t
 - **Tag grouping simplification**: grouping-by-tag currently uses only a task's *first* tag.
   Multi-listing under every tag it has is more correct but adds real complexity (a task
   appearing twice needs careful handling for tap-to-toggle etc.).
-- **Calendar + unscheduled tasks**: tasks with no `date` are invisible in the calendar view.
-  Decide if that's intentional (calendar = dated tasks only, task list = everything) or if an
-  "unscheduled" tray is needed.
+- **Calendar + unscheduled tasks**: tasks with neither a `startDate` nor a `dueDate` are
+  invisible in the calendar view. Decide if that's intentional (calendar = dated tasks only,
+  task list = everything) or if an "unscheduled" tray is needed.
 - **Local/OS calendar integration (skipped)**: considered connecting the Calendar view to the
   device's native calendar (read-only, no-login, like TickTick's "Subscribe Calendar"). Not
   possible from a PWA — no browser exposes device calendar read access; that's a native-app-only
@@ -176,6 +177,25 @@ These came up in the process and were deliberately deferred — listed here so t
 - **Settings view**: doesn't exist yet. Needed for at least: default week hour target, GitHub
   sync configuration, theme (if made configurable at all).
 - **Home/dashboard view**: mentioned early on as a possible landing view, never designed.
+- **Start date / due date split (implemented)**: `Task.date` split into `startDate?` and
+  `dueDate?` (§4). Tasks with a future `startDate` are hidden by default in Tasks and Matrix
+  (they're not actionable yet), with a header icon toggle to reveal them —
+  `src/components/ScheduledToggle.jsx` (hourglass/clock), sitting next to
+  `CompletedToggle.jsx` (now a checkmark/circle) and shared via `useShowScheduled.js`, mirroring
+  `useShowCompleted.js`. Calendar intentionally does NOT apply this filter — it shows a task on
+  its `startDate` day and/or its `dueDate` day as two separate markers rather than a spanning
+  bar (same-day tasks collapse into one "starts · due" marker); seeing what's scheduled on a
+  given day is the point of a calendar. `SortSwitch` gained a "due" option (ascending, tasks
+  without a `dueDate` sort last); there's deliberately no sort-by-start-date, since `startDate`
+  is just the scheduled moment a task flips from inactive to active, not something worth
+  ordering by.
+  - **Still open**: due dates come in soft (self-imposed, "finish by Friday") and hard
+    (external deadline) flavors — needs a way to mark which, e.g. `dueDateStrict: boolean`. Not
+    designed further, not implemented.
+  - **Still open**: recurring templates don't yet generate `startDate`/`dueDate` on the tasks
+    they instantiate (see "Recurring template auto-instantiation" above) — an optional
+    due-offset on the template (e.g. "+3 days") would cover cases like a weekly timesheet
+    (instantiated Monday, due Friday).
 
 ## 8. Suggested build order for Claude Code
 

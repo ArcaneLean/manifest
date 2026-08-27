@@ -37,7 +37,7 @@ export function useTasks() {
     });
   };
 
-  const addTask = ({ text, urgent, important, tags: taskTags }) => {
+  const addTask = ({ text, urgent, important, tags: taskTags, startDate, dueDate }) => {
     const task = {
       id: crypto.randomUUID(),
       text,
@@ -45,6 +45,8 @@ export function useTasks() {
       urgent,
       important,
       tags: taskTags,
+      startDate: startDate || null,
+      dueDate: dueDate || null,
       createdAt: Date.now(),
       completedAt: null,
     };

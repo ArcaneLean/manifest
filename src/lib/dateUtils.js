@@ -38,6 +38,10 @@ export function addMonths(d, n) {
   return r;
 }
 
+export function formatShortDate(iso) {
+  return parseISODate(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toLowerCase();
+}
+
 export function daysBetween(a, b) {
   const MS = 24 * 60 * 60 * 1000;
   return Math.round((b - a) / MS);

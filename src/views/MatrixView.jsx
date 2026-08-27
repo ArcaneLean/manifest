@@ -2,12 +2,16 @@ import { useRef, useState, useEffect } from "react";
 import { Plus, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
+import { isScheduled } from "../lib/taskDates.js";
+import { toISO } from "../lib/dateUtils.js";
 import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
+import { useShowScheduled } from "../hooks/useShowScheduled.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
+import { ScheduledToggle } from "../components/ScheduledToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 
 function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
@@ -99,6 +103,7 @@ export default function MatrixView() {
   const [urgent, setUrgent] = useState(true);
   const [important, setImportant] = useState(true);
   const [showCompleted, setShowCompleted] = useShowCompleted();
+  const [showScheduled, setShowScheduled] = useShowScheduled();
   const inputRef = useRef(null);
   const now = useClock();
 
@@ -127,7 +132,10 @@ export default function MatrixView() {
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
+  const todayISO = toISO(now);
+  const visibleTasks = tasks.filter(
+    (t) => (showCompleted || !t.done) && (showScheduled || !isScheduled(t, todayISO))
+  );
 
   const grouped = {
     do: visibleTasks.filter((t) => quadrantFor(t.urgent, t.important) === "do"),
@@ -160,7 +168,10 @@ export default function MatrixView() {
             <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
               ~/matrix
             </div>
-            <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
+              <ScheduledToggle value={showScheduled} onChange={setShowScheduled} />
+            </div>
           </div>
         </div>
 
