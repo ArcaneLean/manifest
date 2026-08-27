@@ -1,16 +1,20 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, X, Eye } from "lucide-react";
+import { Plus, X, CheckCircle2, Hourglass, Flag } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
+import { isScheduled } from "../lib/taskDates.js";
+import { toISO, formatShortDate } from "../lib/dateUtils.js";
 import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
+import { useShowScheduled } from "../hooks/useShowScheduled.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { Toggle } from "../components/Toggle.jsx";
 import { SortSwitch } from "../components/SortSwitch.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
+import { ScheduledToggle } from "../components/ScheduledToggle.jsx";
 import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 
@@ -22,9 +26,12 @@ export default function TasksView() {
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
   const [draftTags, setDraftTags] = useState([]);
+  const [draftStartDate, setDraftStartDate] = useState("");
+  const [draftDueDate, setDraftDueDate] = useState("");
   const [sortBy, setSortBy] = usePersistentState("manifest.tasks.sortBy", "added");
   const [filterTags, setFilterTags] = usePersistentState("manifest.tasks.filterTags", []);
   const [showCompleted, setShowCompleted] = useShowCompleted();
+  const [showScheduled, setShowScheduled] = useShowScheduled();
   const inputRef = useRef(null);
   const now = useClock();
 
@@ -45,12 +52,21 @@ export default function TasksView() {
   const commitDraft = () => {
     const trimmed = draft.trim();
     if (trimmed) {
-      addTask({ text: trimmed, urgent: draftUrgent, important: draftImportant, tags: draftTags });
+      addTask({
+        text: trimmed,
+        urgent: draftUrgent,
+        important: draftImportant,
+        tags: draftTags,
+        startDate: draftStartDate || undefined,
+        dueDate: draftDueDate || undefined,
+      });
     }
     setDraft("");
     setDraftUrgent(false);
     setDraftImportant(false);
     setDraftTags([]);
+    setDraftStartDate("");
+    setDraftDueDate("");
     setAdding(false);
   };
 
@@ -59,6 +75,8 @@ export default function TasksView() {
     setDraftUrgent(false);
     setDraftImportant(false);
     setDraftTags([]);
+    setDraftStartDate("");
+    setDraftDueDate("");
     setAdding(false);
   };
 
@@ -68,21 +86,32 @@ export default function TasksView() {
     .toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
+  const todayISO = toISO(now);
+
+  const visibleTasks = tasks.filter(
+    (t) => (showCompleted || !t.done) && (showScheduled || !isScheduled(t, todayISO))
+  );
 
   const filteredTasks =
     filterTags.length === 0
       ? visibleTasks
       : visibleTasks.filter((t) => t.tags.some((tid) => filterTags.includes(tid)));
 
-  const sortedTasks =
-    sortBy === "priority"
-      ? [...filteredTasks].sort((a, b) => {
-          const rankA = QUADRANTS[quadrantFor(a.urgent, a.important)].rank;
-          const rankB = QUADRANTS[quadrantFor(b.urgent, b.important)].rank;
-          return rankA - rankB;
-        })
-      : filteredTasks;
+  let sortedTasks = filteredTasks;
+  if (sortBy === "priority") {
+    sortedTasks = [...filteredTasks].sort((a, b) => {
+      const rankA = QUADRANTS[quadrantFor(a.urgent, a.important)].rank;
+      const rankB = QUADRANTS[quadrantFor(b.urgent, b.important)].rank;
+      return rankA - rankB;
+    });
+  } else if (sortBy === "due") {
+    sortedTasks = [...filteredTasks].sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+    });
+  }
 
   // grouped-by-tag view: each task grouped under its first tag; untagged tasks last
   let tagGroups = null;
@@ -97,6 +126,8 @@ export default function TasksView() {
   const renderTaskRow = (t) => {
     const qKey = quadrantFor(t.urgent, t.important);
     const q = QUADRANTS[qKey];
+    const scheduled = isScheduled(t, todayISO);
+    const overdue = t.dueDate && !t.done && t.dueDate < todayISO;
     return (
       <div
         key={t.id}
@@ -141,6 +172,18 @@ export default function TasksView() {
               const tag = tagById(tid);
               return tag ? <TagChip key={tid} tag={tag} small /> : null;
             })}
+            {t.dueDate && (
+              <span style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "10px", color: overdue ? COLORS.amber : COLORS.dim }}>
+                <Flag size={10} />
+                due {formatShortDate(t.dueDate)}
+              </span>
+            )}
+            {scheduled && (
+              <span style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "10px", color: COLORS.dim }}>
+                <Hourglass size={10} />
+                starts {formatShortDate(t.startDate)}
+              </span>
+            )}
           </div>
         </div>
         <span
@@ -186,6 +229,7 @@ export default function TasksView() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
+              <ScheduledToggle value={showScheduled} onChange={setShowScheduled} />
               <SortSwitch value={sortBy} onChange={setSortBy} />
             </div>
           </div>
@@ -259,6 +303,50 @@ export default function TasksView() {
                   <Toggle value={draftImportant} onChange={setDraftImportant} leftLabel="not important" rightLabel="important" />
                 </div>
               </div>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "6px", border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0 8px" }}>
+                  <Hourglass size={12} color={COLORS.dim} />
+                  <input
+                    type="date"
+                    value={draftStartDate}
+                    onChange={(e) => setDraftStartDate(e.target.value)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      color: COLORS.text,
+                      caretColor: COLORS.amber,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: "12px",
+                      colorScheme: "dark",
+                      flex: 1,
+                      minWidth: 0,
+                      padding: "6px 0",
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "6px", border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0 8px" }}>
+                  <Flag size={12} color={COLORS.dim} />
+                  <input
+                    type="date"
+                    value={draftDueDate}
+                    onChange={(e) => setDraftDueDate(e.target.value)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      color: COLORS.text,
+                      caretColor: COLORS.amber,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: "12px",
+                      colorScheme: "dark",
+                      flex: 1,
+                      minWidth: 0,
+                      padding: "6px 0",
+                    }}
+                  />
+                </div>
+              </div>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "14px" }}>
                 {tags.map((tag) => (
                   <TagPickerChip key={tag.id} tag={tag} active={draftTags.includes(tag.id)} onClick={() => toggleDraftTag(tag.id)} />
@@ -309,7 +397,7 @@ export default function TasksView() {
 
           {!dataLoading && tasks.length > 0 && filteredTasks.length === 0 && !showCompleted && !adding && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
-              // all done — tap <Eye size={11} style={{ verticalAlign: "middle" }} /> to see completed tasks
+              // all done — tap <CheckCircle2 size={11} style={{ verticalAlign: "middle" }} /> to see completed tasks
             </div>
           )}
         </div>

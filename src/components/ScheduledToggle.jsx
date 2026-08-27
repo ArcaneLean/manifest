@@ -1,11 +1,11 @@
-import { CheckCircle2, Circle } from "lucide-react";
+import { Hourglass, Clock } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 
-export function CompletedToggle({ value, onChange }) {
+export function ScheduledToggle({ value, onChange }) {
   return (
     <button
       onClick={() => onChange(!value)}
-      title={value ? "hide completed tasks" : "show completed tasks"}
+      title={value ? "hide scheduled tasks" : "show scheduled tasks"}
       style={{
         display: "flex",
         alignItems: "center",
@@ -18,7 +18,7 @@ export function CompletedToggle({ value, onChange }) {
         cursor: "pointer",
       }}
     >
-      {value ? <CheckCircle2 size={13} color={COLORS.amber} /> : <Circle size={13} color={COLORS.dim} />}
+      {value ? <Hourglass size={13} color={COLORS.amber} /> : <Clock size={13} color={COLORS.dim} />}
     </button>
   );
 }

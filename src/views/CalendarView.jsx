@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
@@ -13,6 +13,33 @@ import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { toISO, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
 
+// A task appears on its startDate day and/or its dueDate day — see
+// ARCHITECTURE.md §7 ("Start date / due date split"). Deliberately two
+// separate day markers rather than a spanning bar, for simplicity.
+function occurrencesForDate(tasks, iso) {
+  const occurrences = [];
+  for (const t of tasks) {
+    const isStart = t.startDate === iso;
+    const isDue = t.dueDate === iso;
+    if (isStart && isDue) occurrences.push({ task: t, kind: "both" });
+    else if (isStart) occurrences.push({ task: t, kind: "start" });
+    else if (isDue) occurrences.push({ task: t, kind: "due" });
+  }
+  return occurrences;
+}
+
+function OccIcon({ kind }) {
+  if (kind === "both") return <CalendarClock size={11} color={COLORS.dim} />;
+  if (kind === "start") return <Hourglass size={11} color={COLORS.dim} />;
+  return <Flag size={11} color={COLORS.dim} />;
+}
+
+function occLabel(kind) {
+  if (kind === "both") return "starts · due";
+  if (kind === "start") return "starts";
+  return "due";
+}
+
 const MODE_OPTIONS = [
   { key: "list", label: "list" },
   { key: "week", label: "week" },
@@ -23,13 +50,14 @@ function buildChronologicalDays(fromDate, horizonDays, tasks) {
   const days = [];
   for (let i = 0; i < horizonDays; i++) {
     const date = addDays(fromDate, i);
-    const dayTasks = tasks.filter((t) => t.date === toISO(date));
-    if (dayTasks.length > 0) days.push({ date, tasks: dayTasks });
+    const occurrences = occurrencesForDate(tasks, toISO(date));
+    if (occurrences.length > 0) days.push({ date, occurrences });
   }
   return days;
 }
 
-function TaskRow({ t, onToggle }) {
+function TaskRow({ occ, onToggle }) {
+  const t = occ.task;
   const q = QUADRANTS[quadrantFor(t.urgent, t.important)];
   return (
     <div
@@ -68,15 +96,21 @@ function TaskRow({ t, onToggle }) {
         >
           {t.text}
         </span>
-        <div style={{ fontSize: "9.5px", letterSpacing: "0.5px", color: t.done ? COLORS.dim : q.color, marginTop: "2px", textTransform: "uppercase" }}>
-          {q.label}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+          <span style={{ fontSize: "9.5px", letterSpacing: "0.5px", color: t.done ? COLORS.dim : q.color, textTransform: "uppercase" }}>
+            {q.label}
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: "3px", fontSize: "9.5px", color: COLORS.dim }}>
+            <OccIcon kind={occ.kind} />
+            {occLabel(occ.kind)}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-function DaySection({ date, tasks, onToggle, isToday }) {
+function DaySection({ date, occurrences, onToggle, isToday }) {
   const label = date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   return (
     <div style={{ marginBottom: "2px" }}>
@@ -94,12 +128,12 @@ function DaySection({ date, tasks, onToggle, isToday }) {
         {label}
         {isToday ? " · today" : ""}
       </div>
-      {tasks.length === 0 ? (
+      {occurrences.length === 0 ? (
         <div style={{ padding: "10px 20px", fontSize: "11.5px", color: COLORS.dim }}>—</div>
       ) : (
         <div style={{ padding: "0 6px" }}>
-          {tasks.map((t) => (
-            <TaskRow key={t.id} t={t} onToggle={onToggle} />
+          {occurrences.map((occ) => (
+            <TaskRow key={occ.task.id} occ={occ} onToggle={onToggle} />
           ))}
         </div>
       )}
@@ -108,8 +142,10 @@ function DaySection({ date, tasks, onToggle, isToday }) {
 }
 
 // Reads/writes the same task store as Tasks and Matrix — see ARCHITECTURE.md
-// §8 point 4. Unscheduled (no `date`) tasks are intentionally invisible
-// here — see §7 "Calendar + unscheduled tasks".
+// §8 point 4. Tasks with neither a startDate nor a dueDate are intentionally
+// invisible here — see §7 "Calendar + unscheduled tasks". Unlike Tasks/Matrix,
+// this view does NOT hide future-startDate tasks: seeing what's scheduled on
+// a given day is the point of a calendar.
 export default function CalendarView() {
   const { tags, loading: tagsLoading } = useTags();
   const { tasks, loading: tasksLoading, toggleTask, addTask } = useTasks();
@@ -119,7 +155,8 @@ export default function CalendarView() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
-  const [draftDate, setDraftDate] = useState(toISO(today));
+  const [draftStartDate, setDraftStartDate] = useState("");
+  const [draftDueDate, setDraftDueDate] = useState(toISO(today));
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
   const [showCompleted, setShowCompleted] = useShowCompleted();
@@ -150,21 +187,30 @@ export default function CalendarView() {
 
   const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
 
-  const tasksForDate = (d) => visibleTasks.filter((t) => t.date === toISO(d));
+  const occurrencesForDay = (d) => occurrencesForDate(visibleTasks, toISO(d));
 
   const openAddFor = (date) => {
-    setDraftDate(toISO(date));
+    setDraftDueDate(toISO(date));
     setAdding(true);
   };
 
   const commitDraft = () => {
     const trimmed = draft.trim();
-    if (trimmed && draftDate) {
-      addTask({ text: trimmed, urgent: draftUrgent, important: draftImportant, tags: [], date: draftDate });
+    if (trimmed && (draftStartDate || draftDueDate)) {
+      addTask({
+        text: trimmed,
+        urgent: draftUrgent,
+        important: draftImportant,
+        tags: [],
+        startDate: draftStartDate || undefined,
+        dueDate: draftDueDate || undefined,
+      });
     }
     setDraft("");
     setDraftUrgent(false);
     setDraftImportant(false);
+    setDraftStartDate("");
+    setDraftDueDate(toISO(today));
     setAdding(false);
   };
 
@@ -172,6 +218,8 @@ export default function CalendarView() {
     setDraft("");
     setDraftUrgent(false);
     setDraftImportant(false);
+    setDraftStartDate("");
+    setDraftDueDate(toISO(today));
     setAdding(false);
   };
 
@@ -278,7 +326,7 @@ export default function CalendarView() {
               upcoming · scrolling forward from today
             </div>
             {chronoDays.map((d) => (
-              <DaySection key={toISO(d.date)} date={d.date} tasks={d.tasks} onToggle={toggleTask} isToday={toISO(d.date) === toISO(today)} />
+              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} onToggle={toggleTask} isToday={toISO(d.date) === toISO(today)} />
             ))}
             <div ref={sentinelRef} style={{ padding: "24px 20px", textAlign: "center" }}>
               {horizonDays >= 730 ? (
@@ -293,7 +341,7 @@ export default function CalendarView() {
         {/* Week mode */}
         {mode === "week" &&
           weekDays.map((d) => (
-            <DaySection key={toISO(d)} date={d} tasks={tasksForDate(d)} onToggle={toggleTask} isToday={toISO(d) === toISO(today)} />
+            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} onToggle={toggleTask} isToday={toISO(d) === toISO(today)} />
           ))}
 
         {/* Month mode */}
@@ -308,7 +356,7 @@ export default function CalendarView() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "3px" }}>
                 {monthCells.map((cell) => {
                   const iso = toISO(cell.date);
-                  const dayTasks = tasksForDate(cell.date);
+                  const dayOccurrences = occurrencesForDay(cell.date);
                   const isToday = iso === toISO(today);
                   const isSelected = iso === toISO(selectedDate);
                   return (
@@ -336,9 +384,9 @@ export default function CalendarView() {
                         {cell.date.getDate()}
                       </span>
                       <div style={{ display: "flex", gap: "2px", height: "5px" }}>
-                        {dayTasks.slice(0, 3).map((t) => {
-                          const q = QUADRANTS[quadrantFor(t.urgent, t.important)];
-                          return <span key={t.id} style={{ width: "4px", height: "4px", borderRadius: "50%", background: t.done ? COLORS.border : q.color }} />;
+                        {dayOccurrences.slice(0, 3).map((occ) => {
+                          const q = QUADRANTS[quadrantFor(occ.task.urgent, occ.task.important)];
+                          return <span key={occ.task.id} style={{ width: "4px", height: "4px", borderRadius: "50%", background: occ.task.done ? COLORS.border : q.color }} />;
                         })}
                       </div>
                     </div>
@@ -348,7 +396,7 @@ export default function CalendarView() {
             </div>
 
             <div style={{ marginTop: "16px" }}>
-              <DaySection date={selectedDate} tasks={tasksForDate(selectedDate)} onToggle={toggleTask} isToday={toISO(selectedDate) === toISO(today)} />
+              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} onToggle={toggleTask} isToday={toISO(selectedDate) === toISO(today)} />
             </div>
           </>
         )}
@@ -378,24 +426,51 @@ export default function CalendarView() {
                 }}
               />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-              <span style={{ color: COLORS.dim, fontSize: "12px", flexShrink: 0, width: "14px" }}>#</span>
-              <input
-                type="date"
-                value={draftDate}
-                onChange={(e) => setDraftDate(e.target.value)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: COLORS.text,
-                  caretColor: COLORS.amber,
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: "14px",
-                  colorScheme: "dark",
-                  accentColor: COLORS.amber,
-                }}
-              />
+            <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "6px", border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0 8px" }}>
+                <Hourglass size={12} color={COLORS.dim} />
+                <input
+                  type="date"
+                  value={draftStartDate}
+                  onChange={(e) => setDraftStartDate(e.target.value)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: COLORS.text,
+                    caretColor: COLORS.amber,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: "13px",
+                    colorScheme: "dark",
+                    accentColor: COLORS.amber,
+                    flex: 1,
+                    minWidth: 0,
+                    padding: "6px 0",
+                  }}
+                />
+              </div>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "6px", border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0 8px" }}>
+                <Flag size={12} color={COLORS.dim} />
+                <input
+                  type="date"
+                  value={draftDueDate}
+                  onChange={(e) => setDraftDueDate(e.target.value)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: COLORS.text,
+                    caretColor: COLORS.amber,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: "13px",
+                    colorScheme: "dark",
+                    accentColor: COLORS.amber,
+                    flex: 1,
+                    minWidth: 0,
+                    padding: "6px 0",
+                  }}
+                />
+              </div>
             </div>
             <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
               <div style={{ flex: 1 }}>

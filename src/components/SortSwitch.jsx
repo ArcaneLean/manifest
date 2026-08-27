@@ -3,6 +3,7 @@ import { COLORS } from "../theme/colors.js";
 const OPTIONS = [
   { key: "added", label: "added" },
   { key: "priority", label: "priority" },
+  { key: "due", label: "due" },
   { key: "tag", label: "tag" },
 ];
 
