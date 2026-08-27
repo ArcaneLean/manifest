@@ -5,7 +5,9 @@ import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
+import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { Toggle } from "../components/Toggle.jsx";
+import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 
 function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
@@ -96,6 +98,7 @@ export default function MatrixView() {
   const [draft, setDraft] = useState("");
   const [urgent, setUrgent] = useState(true);
   const [important, setImportant] = useState(true);
+  const [showCompleted, setShowCompleted] = useShowCompleted();
   const inputRef = useRef(null);
   const now = useClock();
 
@@ -124,11 +127,13 @@ export default function MatrixView() {
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
+  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
+
   const grouped = {
-    do: tasks.filter((t) => quadrantFor(t.urgent, t.important) === "do"),
-    schedule: tasks.filter((t) => quadrantFor(t.urgent, t.important) === "schedule"),
-    delegate: tasks.filter((t) => quadrantFor(t.urgent, t.important) === "delegate"),
-    drop: tasks.filter((t) => quadrantFor(t.urgent, t.important) === "drop"),
+    do: visibleTasks.filter((t) => quadrantFor(t.urgent, t.important) === "do"),
+    schedule: visibleTasks.filter((t) => quadrantFor(t.urgent, t.important) === "schedule"),
+    delegate: visibleTasks.filter((t) => quadrantFor(t.urgent, t.important) === "delegate"),
+    drop: visibleTasks.filter((t) => quadrantFor(t.urgent, t.important) === "drop"),
   };
 
   return (
@@ -151,8 +156,11 @@ export default function MatrixView() {
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
             {dateStr} · {timeStr}
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
-            ~/matrix
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
+              ~/matrix
+            </div>
+            <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
           </div>
         </div>
 

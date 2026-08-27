@@ -5,8 +5,10 @@ import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
+import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
+import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { toISO, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
 
@@ -119,6 +121,7 @@ export default function CalendarView() {
   const [draftDate, setDraftDate] = useState(toISO(today));
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
+  const [showCompleted, setShowCompleted] = useShowCompleted();
   const inputRef = useRef(null);
   const sentinelRef = useRef(null);
   const [horizonDays, setHorizonDays] = useState(90);
@@ -144,7 +147,9 @@ export default function CalendarView() {
     return () => observer.disconnect();
   }, [mode, horizonDays]);
 
-  const tasksForDate = (d) => tasks.filter((t) => t.date === toISO(d));
+  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
+
+  const tasksForDate = (d) => visibleTasks.filter((t) => t.date === toISO(d));
 
   const openAddFor = (date) => {
     setDraftDate(toISO(date));
@@ -191,7 +196,7 @@ export default function CalendarView() {
   let chronoDays = [];
 
   if (mode === "list") {
-    chronoDays = buildChronologicalDays(today, horizonDays, tasks);
+    chronoDays = buildChronologicalDays(today, horizonDays, visibleTasks);
   } else if (mode === "week") {
     const start = startOfWeekMonday(anchor);
     weekDays = Array.from({ length: 7 }, (_, i) => addDays(start, i));
@@ -228,7 +233,10 @@ export default function CalendarView() {
             <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
               ~/calendar
             </div>
-            <Segmented value={mode} onChange={setMode} options={MODE_OPTIONS} />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
+              <Segmented value={mode} onChange={setMode} options={MODE_OPTIONS} />
+            </div>
           </div>
         </div>
 
