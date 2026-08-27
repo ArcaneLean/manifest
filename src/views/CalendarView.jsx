@@ -6,6 +6,7 @@ import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
+import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
@@ -112,7 +113,7 @@ function DaySection({ date, tasks, onToggle, isToday }) {
 export default function CalendarView() {
   const { tags, loading: tagsLoading } = useTags();
   const { tasks, loading: tasksLoading, toggleTask, addTask } = useTasks();
-  const [mode, setMode] = useState("week");
+  const [mode, setMode] = usePersistentState("manifest.calendar.mode", "week");
   const today = startOfToday();
   const [anchor, setAnchor] = useState(today);
   const [selectedDate, setSelectedDate] = useState(today);
