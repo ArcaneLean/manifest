@@ -23,7 +23,7 @@ export default function TasksView() {
   const [draftImportant, setDraftImportant] = useState(false);
   const [draftTags, setDraftTags] = useState([]);
   const [sortBy, setSortBy] = usePersistentState("manifest.tasks.sortBy", "added");
-  const [filterTags, setFilterTags] = useState([]);
+  const [filterTags, setFilterTags] = usePersistentState("manifest.tasks.filterTags", []);
   const [showCompleted, setShowCompleted] = useShowCompleted();
   const inputRef = useRef(null);
   const now = useClock();

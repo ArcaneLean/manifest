@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { usePersistentState } from "./hooks/usePersistentState.js";
 import TasksView from "./views/TasksView.jsx";
 import MatrixView from "./views/MatrixView.jsx";
 import CalendarView from "./views/CalendarView.jsx";
@@ -22,7 +22,7 @@ const VIEWS = {
 // Settings and a home/dashboard view are explicitly out of scope for now —
 // see ARCHITECTURE.md §5 ("not built") and §7.
 export default function App() {
-  const [active, setActive] = useState("tasks");
+  const [active, setActive] = usePersistentState("manifest.nav.active", "tasks");
   const ActiveView = VIEWS[active];
 
   return (
