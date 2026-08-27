@@ -6,6 +6,7 @@ import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
+import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { Toggle } from "../components/Toggle.jsx";
 import { SortSwitch } from "../components/SortSwitch.jsx";
@@ -21,8 +22,8 @@ export default function TasksView() {
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
   const [draftTags, setDraftTags] = useState([]);
-  const [sortBy, setSortBy] = useState("added");
-  const [filterTags, setFilterTags] = useState([]);
+  const [sortBy, setSortBy] = usePersistentState("manifest.tasks.sortBy", "added");
+  const [filterTags, setFilterTags] = usePersistentState("manifest.tasks.filterTags", []);
   const [showCompleted, setShowCompleted] = useShowCompleted();
   const inputRef = useRef(null);
   const now = useClock();

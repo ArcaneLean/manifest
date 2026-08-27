@@ -6,6 +6,7 @@ import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useTemplates } from "../hooks/useTemplates.js";
+import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
@@ -106,8 +107,8 @@ export default function TemplatesView() {
   const [draftWeekDays, setDraftWeekDays] = useState([0]);
   const [draftMonthDay, setDraftMonthDay] = useState(1);
   const [draftTags, setDraftTags] = useState([]);
-  const [filterTags, setFilterTags] = useState([]);
-  const [groupByTag, setGroupByTag] = useState(false);
+  const [filterTags, setFilterTags] = usePersistentState("manifest.templates.filterTags", []);
+  const [groupByTag, setGroupByTag] = usePersistentState("manifest.templates.groupByTag", false);
   const textRef = useRef(null);
   const now = useClock();
   const today = startOfToday();
