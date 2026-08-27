@@ -1,13 +1,15 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, X, Eye, EyeOff } from "lucide-react";
+import { Plus, X, Eye } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
+import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { Toggle } from "../components/Toggle.jsx";
 import { SortSwitch } from "../components/SortSwitch.jsx";
+import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 
@@ -21,27 +23,13 @@ export default function TasksView() {
   const [draftTags, setDraftTags] = useState([]);
   const [sortBy, setSortBy] = useState("added");
   const [filterTags, setFilterTags] = useState([]);
-  const [showCompleted, setShowCompleted] = useState(() => {
-    try {
-      return localStorage.getItem("manifest.tasks.showCompleted") === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [showCompleted, setShowCompleted] = useShowCompleted();
   const inputRef = useRef(null);
   const now = useClock();
 
   useEffect(() => {
     if (adding && inputRef.current) inputRef.current.focus();
   }, [adding]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("manifest.tasks.showCompleted", String(showCompleted));
-    } catch {
-      // localStorage unavailable (private mode, etc.) — toggle just won't persist
-    }
-  }, [showCompleted]);
 
   const tagById = (id) => tags.find((t) => t.id === id);
 
@@ -196,23 +184,7 @@ export default function TasksView() {
               {dataLoading ? "loading…" : `${remaining} open · ${tasks.length - remaining} done`}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <button
-                onClick={() => setShowCompleted((v) => !v)}
-                title={showCompleted ? "hide completed tasks" : "show completed tasks"}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "26px",
-                  height: "26px",
-                  background: "none",
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                }}
-              >
-                {showCompleted ? <Eye size={13} color={COLORS.amber} /> : <EyeOff size={13} color={COLORS.dim} />}
-              </button>
+              <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
               <SortSwitch value={sortBy} onChange={setSortBy} />
             </div>
           </div>
