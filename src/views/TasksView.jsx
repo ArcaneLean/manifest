@@ -11,6 +11,7 @@ import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { useShowScheduled } from "../hooks/useShowScheduled.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Checkbox } from "../components/Checkbox.jsx";
+import { TaskEditModal } from "../components/TaskEditModal.jsx";
 import { Toggle } from "../components/Toggle.jsx";
 import { SortSwitch } from "../components/SortSwitch.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
@@ -21,8 +22,9 @@ import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 
 export default function TasksView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks();
+  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask, updateTask } = useTasks();
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
@@ -89,6 +91,8 @@ export default function TasksView() {
 
   const todayISO = toISO(now);
 
+  const editingTask = editingId ? tasks.find((t) => t.id === editingId) : null;
+
   const visibleTasks = tasks.filter(
     (t) => (showCompleted || !t.done) && (showScheduled || !isScheduled(t, todayISO))
   );
@@ -133,7 +137,6 @@ export default function TasksView() {
       <div
         key={t.id}
         className="task-row"
-        onClick={() => toggleTask(t.id)}
         style={{
           display: "flex",
           alignItems: "flex-start",
@@ -141,11 +144,12 @@ export default function TasksView() {
           padding: "14px 20px 14px 16px",
           borderBottom: `1px solid ${COLORS.border}`,
           borderLeft: `3px solid ${t.done ? COLORS.border : q.color}`,
-          cursor: "pointer",
         }}
       >
-        <Checkbox done={t.done} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <span onClick={() => toggleTask(t.id)} style={{ cursor: "pointer" }}>
+          <Checkbox done={t.done} />
+        </span>
+        <div onClick={() => setEditingId(t.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
           <span
             style={{
               fontSize: "14.5px",
@@ -428,6 +432,18 @@ export default function TasksView() {
           </button>
         )}
       </div>
+
+      {editingTask && (
+        <TaskEditModal
+          task={editingTask}
+          tags={tags}
+          onClose={() => setEditingId(null)}
+          onSave={(updates) => {
+            updateTask(editingTask.id, updates);
+            setEditingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

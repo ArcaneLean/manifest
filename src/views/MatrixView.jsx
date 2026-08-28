@@ -10,12 +10,13 @@ import { useTasks } from "../hooks/useTasks.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { useShowScheduled } from "../hooks/useShowScheduled.js";
 import { Toggle } from "../components/Toggle.jsx";
+import { TaskEditModal } from "../components/TaskEditModal.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { ScheduledToggle } from "../components/ScheduledToggle.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 
-function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
+function QuadrantPanel({ qKey, tasks, onToggle, onRemove, onEdit }) {
   const q = QUADRANTS[qKey];
   return (
     <div
@@ -71,7 +72,7 @@ function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
               {t.done ? "[x]" : "[ ]"}
             </span>
             <span
-              onClick={() => onToggle(t.id)}
+              onClick={() => onEdit(t.id)}
               style={{
                 fontSize: "11.5px",
                 lineHeight: "1.4",
@@ -98,8 +99,9 @@ function QuadrantPanel({ qKey, tasks, onToggle, onRemove }) {
 // ("2x2 lens over the same task store, not separate data").
 export default function MatrixView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask } = useTasks();
+  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask, updateTask } = useTasks();
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [urgent, setUrgent] = useState(true);
   const [important, setImportant] = useState(true);
@@ -134,6 +136,7 @@ export default function MatrixView() {
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   const todayISO = toISO(now);
+  const editingTask = editingId ? tasks.find((t) => t.id === editingId) : null;
   const visibleTasks = tasks.filter(
     (t) => (showCompleted || !t.done) && (showScheduled || !isScheduled(t, todayISO))
   );
@@ -231,16 +234,16 @@ export default function MatrixView() {
           </div>
 
           <div style={{ gridArea: "q_do", minHeight: 0 }}>
-            <QuadrantPanel qKey="do" tasks={grouped.do} onToggle={toggleTask} onRemove={removeTask} />
+            <QuadrantPanel qKey="do" tasks={grouped.do} onToggle={toggleTask} onRemove={removeTask} onEdit={setEditingId} />
           </div>
           <div style={{ gridArea: "q_sched", minHeight: 0 }}>
-            <QuadrantPanel qKey="schedule" tasks={grouped.schedule} onToggle={toggleTask} onRemove={removeTask} />
+            <QuadrantPanel qKey="schedule" tasks={grouped.schedule} onToggle={toggleTask} onRemove={removeTask} onEdit={setEditingId} />
           </div>
           <div style={{ gridArea: "q_deleg", minHeight: 0 }}>
-            <QuadrantPanel qKey="delegate" tasks={grouped.delegate} onToggle={toggleTask} onRemove={removeTask} />
+            <QuadrantPanel qKey="delegate" tasks={grouped.delegate} onToggle={toggleTask} onRemove={removeTask} onEdit={setEditingId} />
           </div>
           <div style={{ gridArea: "q_drop", minHeight: 0 }}>
-            <QuadrantPanel qKey="drop" tasks={grouped.drop} onToggle={toggleTask} onRemove={removeTask} />
+            <QuadrantPanel qKey="drop" tasks={grouped.drop} onToggle={toggleTask} onRemove={removeTask} onEdit={setEditingId} />
           </div>
         </div>
 
@@ -343,6 +346,18 @@ export default function MatrixView() {
           </button>
         )}
       </div>
+
+      {editingTask && (
+        <TaskEditModal
+          task={editingTask}
+          tags={tags}
+          onClose={() => setEditingId(null)}
+          onSave={(updates) => {
+            updateTask(editingTask.id, updates);
+            setEditingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
