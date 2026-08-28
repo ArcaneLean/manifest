@@ -59,5 +59,14 @@ export function useTasks() {
     deleteTask(id);
   };
 
-  return { tasks, loading, toggleTask, addTask, removeTask };
+  const updateTask = (id, updates) => {
+    setTasks((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
+      const updated = next.find((t) => t.id === id);
+      if (updated) putTask(updated);
+      return next;
+    });
+  };
+
+  return { tasks, loading, toggleTask, addTask, removeTask, updateTask };
 }
