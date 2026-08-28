@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock } from "lucide-react";
+import { Plus, X, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
@@ -10,6 +10,7 @@ import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
+import { TaskEditModal } from "../components/TaskEditModal.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { toISO, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
@@ -57,12 +58,11 @@ function buildChronologicalDays(fromDate, horizonDays, tasks) {
   return days;
 }
 
-function TaskRow({ occ, onToggle }) {
+function TaskRow({ occ, onToggle, onEdit, onRemove }) {
   const t = occ.task;
   const q = QUADRANTS[quadrantFor(t.urgent, t.important)];
   return (
     <div
-      onClick={() => onToggle(t.id)}
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -70,10 +70,10 @@ function TaskRow({ occ, onToggle }) {
         padding: "10px 14px 10px 12px",
         borderBottom: `1px solid ${COLORS.border}`,
         borderLeft: `3px solid ${t.done ? COLORS.border : q.color}`,
-        cursor: "pointer",
       }}
     >
       <span
+        onClick={() => onToggle(t.id)}
         style={{
           fontFamily: "'IBM Plex Mono', monospace",
           color: t.done ? COLORS.sage : COLORS.amber,
@@ -81,11 +81,12 @@ function TaskRow({ occ, onToggle }) {
           width: "24px",
           flexShrink: 0,
           userSelect: "none",
+          cursor: "pointer",
         }}
       >
         {t.done ? "[×]" : "[ ]"}
       </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div onClick={() => onEdit(t.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
         <span
           style={{
             fontSize: "13.5px",
@@ -107,11 +108,14 @@ function TaskRow({ occ, onToggle }) {
           </span>
         </div>
       </div>
+      <span onClick={() => onRemove(t.id)} style={{ cursor: "pointer", flexShrink: 0, paddingTop: "2px" }}>
+        <X size={13} color={COLORS.dim} />
+      </span>
     </div>
   );
 }
 
-function DaySection({ date, occurrences, onToggle, isToday }) {
+function DaySection({ date, occurrences, onToggle, onEdit, onRemove, isToday }) {
   const label = date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   return (
     <div style={{ marginBottom: "2px" }}>
@@ -134,7 +138,7 @@ function DaySection({ date, occurrences, onToggle, isToday }) {
       ) : (
         <div style={{ padding: "0 6px" }}>
           {occurrences.map((occ) => (
-            <TaskRow key={occ.task.id} occ={occ} onToggle={onToggle} />
+            <TaskRow key={occ.task.id} occ={occ} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />
           ))}
         </div>
       )}
@@ -149,12 +153,13 @@ function DaySection({ date, occurrences, onToggle, isToday }) {
 // a given day is the point of a calendar.
 export default function CalendarView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { tasks, loading: tasksLoading, toggleTask, addTask } = useTasks();
+  const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask, updateTask } = useTasks();
   const [mode, setMode] = usePersistentState("manifest.calendar.mode", "week");
   const today = startOfToday();
   const [anchor, setAnchor] = useState(today);
   const [selectedDate, setSelectedDate] = useState(today);
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [draftStartDate, setDraftStartDate] = useState("");
   const [draftDueDate, setDraftDueDate] = useState(toISO(today));
@@ -187,6 +192,8 @@ export default function CalendarView() {
   }, [mode, horizonDays]);
 
   const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
+
+  const editingTask = editingId ? tasks.find((t) => t.id === editingId) : null;
 
   const occurrencesForDay = (d) => occurrencesForDate(visibleTasks, toISO(d));
 
@@ -327,7 +334,7 @@ export default function CalendarView() {
               upcoming · scrolling forward from today
             </div>
             {chronoDays.map((d) => (
-              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} onToggle={toggleTask} isToday={toISO(d.date) === toISO(today)} />
+              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} isToday={toISO(d.date) === toISO(today)} />
             ))}
             <div ref={sentinelRef} style={{ padding: "24px 20px", textAlign: "center" }}>
               {horizonDays >= 730 ? (
@@ -342,7 +349,7 @@ export default function CalendarView() {
         {/* Week mode */}
         {mode === "week" &&
           weekDays.map((d) => (
-            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} onToggle={toggleTask} isToday={toISO(d) === toISO(today)} />
+            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} isToday={toISO(d) === toISO(today)} />
           ))}
 
         {/* Month mode */}
@@ -397,7 +404,7 @@ export default function CalendarView() {
             </div>
 
             <div style={{ marginTop: "16px" }}>
-              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} onToggle={toggleTask} isToday={toISO(selectedDate) === toISO(today)} />
+              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} isToday={toISO(selectedDate) === toISO(today)} />
             </div>
           </>
         )}
@@ -543,6 +550,18 @@ export default function CalendarView() {
           </button>
         )}
       </div>
+
+      {editingTask && (
+        <TaskEditModal
+          task={editingTask}
+          tags={tags}
+          onClose={() => setEditingId(null)}
+          onSave={(updates) => {
+            updateTask(editingTask.id, updates);
+            setEditingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
