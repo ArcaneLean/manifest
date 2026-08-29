@@ -178,6 +178,41 @@ These came up in the process and were deliberately deferred — listed here so t
   API (Android `CalendarContract`, iOS EventKit). Would require moving off pure PWA (e.g.
   Capacitor + a calendar plugin), which conflicts with §1's PWA-only stance. If revisited without
   going native, `.ics` import/export is the lightweight fallback — not started.
+- **Google Calendar integration (implemented)**: read-only sync of the signed-in user's primary
+  Google Calendar into the Calendar view, entirely client-side (no backend, per §1) — auth via
+  Google Identity Services' OAuth token client (`src/lib/googleAuth.js`, GIS script loaded in
+  `index.html`), scoped to `calendar.readonly`. Two other approaches were considered and rejected:
+  an "app password" (Google doesn't support one for the Calendar API — OAuth is required
+  regardless), and the account's secret `.ics` URL (safer to leak — read-only and revocable
+  independent of the whole Google account — but `calendar.google.com`'s ICS endpoint doesn't send
+  CORS headers, so fetching it from a static PWA would need a small stateless proxy, which OAuth
+  avoids).
+  - **Token storage (deliberate)**: the OAuth access token is kept only in `googleAuth.js`'s
+    module-level memory, never written to IndexedDB/localStorage — a leaked token is short-lived
+    (~1h) and read-only rather than a durable secret sitting in storage. Only a boolean
+    "previously connected" flag persists (`usePersistentState`, `manifest.gcal.connected`), which
+    drives a **silent** (`prompt: ""`) token re-request on load rather than a popup; if that
+    fails (expired Google session), the UI just falls back to the last-synced cache until the
+    user reconnects.
+  - **Cache + incremental sync**: fetched events are normalized (`{id, summary, start, end,
+    allDay, htmlLink}`) and cached in a new `gcalEvents` IndexedDB store (`src/lib/gcalRepo.js`,
+    bumping `DB_VERSION` to 2 — see `ensureStore` guard in `db.js` for why every store creation
+    is now idempotent, not just the new ones). `src/lib/googleCalendarSync.js` uses the Calendar
+    API's `syncToken` for incremental refreshes once available (falling back to a bounded
+    `[-30d, +730d]` window on first sync, matching the Calendar view's own list-mode horizon),
+    and does a full resync if the token goes stale (API returns 410).
+  - **Rendering**: `CalendarView.jsx` renders gcal events as a third, read-only occurrence type
+    alongside real tasks and virtual recurring occurrences — solid steel-blue left border
+    (`GCAL_COLOR`, deliberately outside both the quadrant and `TAG_PALETTE` color families, same
+    reasoning as §3's tag/priority split), no checkbox/edit/delete, tapping opens the event on
+    calendar.google.com. `datesForGCalEvent` expands one event into every local day it touches
+    (all-day spans use Google's exclusive `end.date`; timed events use local day boundaries).
+  - **Setup required per deployment**: needs a Google Cloud OAuth client ID (not secret, but
+    project-specific — see `.env.example`) with the dev and deployed origins authorized; wired
+    into the GitHub Pages build via a `VITE_GOOGLE_CLIENT_ID` repo variable
+    (`.github/workflows/deploy.yml`). The connect/disconnect button
+    (`GoogleCalendarButton.jsx`) renders nothing until that's configured, so the feature is
+    invisible rather than broken for anyone who hasn't set it up.
 - **Recurring templates on the Calendar (implemented)**: a recurring template has exactly one
   open, real "anchor" `Task` at a time, linked via `Task.templateId`. It's instantiated when the
   template is created (or recurring is switched on), dated on the schedule's actual **first

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, X, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock, Repeat } from "lucide-react";
+import { Plus, X, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock, Repeat, Cloud } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
@@ -8,15 +8,58 @@ import { useTasks } from "../hooks/useTasks.js";
 import { useTemplates } from "../hooks/useTemplates.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
+import { useGoogleCalendar } from "../hooks/useGoogleCalendar.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
+import { GoogleCalendarButton } from "../components/GoogleCalendarButton.jsx";
 import { TaskEditModal } from "../components/TaskEditModal.jsx";
 import { TemplateEditModal } from "../components/TemplateEditModal.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { toISO, parseISODate, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
 import { occurrencesInRange } from "../lib/recurrence.js";
+
+// Deliberately outside both the quadrant palette and TAG_PALETTE (see
+// ARCHITECTURE.md §3) — Google Calendar events are a third, external
+// coding system and shouldn't be visually confused with either.
+const GCAL_COLOR = "#6b8fb5";
+
+// Expands one Google Calendar event into the ISO day(s) it should render
+// on. All-day events use Google's [start.date, end.date) — end exclusive;
+// timed events are shown on every local calendar day they touch. Guarded
+// against runaway loops on malformed data — the sync's own 2-year window
+// (googleCalendarSync.js) keeps real spans far shorter than the guard.
+function datesForGCalEvent(event) {
+  if (!event.start || !event.end) return [];
+  // All-day: start/end are "YYYY-MM-DD" strings, end exclusive per the
+  // Google Calendar API. Timed: start/end are datetimes — shown on every
+  // local calendar day they touch, end inclusive.
+  const firstDay = event.allDay ? parseISODate(event.start) : parseISODate(toISO(new Date(event.start)));
+  const lastDay = event.allDay ? addDays(parseISODate(event.end), -1) : parseISODate(toISO(new Date(event.end)));
+  const dates = [];
+  let cur = firstDay;
+  let guard = 0;
+  while (cur <= lastDay && guard < 400) {
+    dates.push(toISO(cur));
+    cur = addDays(cur, 1);
+    guard++;
+  }
+  return dates;
+}
+
+// Returns Map<iso, GCalEvent[]> for whichever events fall in range — mirrors
+// virtualOccurrencesInRange below, recomputed fresh per render.
+function gcalEventsByDate(events) {
+  const byDate = new Map();
+  for (const event of events) {
+    for (const iso of datesForGCalEvent(event)) {
+      if (!byDate.has(iso)) byDate.set(iso, []);
+      byDate.get(iso).push(event);
+    }
+  }
+  return byDate;
+}
 
 // A task appears on its startDate day and/or its dueDate day — see
 // ARCHITECTURE.md §7 ("Start date / due date split"). Deliberately two
@@ -73,13 +116,17 @@ const MODE_OPTIONS = [
   { key: "month", label: "month" },
 ];
 
-function buildChronologicalDays(fromDate, horizonDays, tasks, virtualByDate) {
+function buildChronologicalDays(fromDate, horizonDays, tasks, virtualByDate, gcalByDate) {
   const days = [];
   for (let i = 0; i < horizonDays; i++) {
     const date = addDays(fromDate, i);
-    const occurrences = occurrencesForDate(tasks, toISO(date));
-    const virtualTemplates = virtualByDate.get(toISO(date)) || [];
-    if (occurrences.length > 0 || virtualTemplates.length > 0) days.push({ date, occurrences, virtualTemplates });
+    const iso = toISO(date);
+    const occurrences = occurrencesForDate(tasks, iso);
+    const virtualTemplates = virtualByDate.get(iso) || [];
+    const gcalEvents = gcalByDate.get(iso) || [];
+    if (occurrences.length > 0 || virtualTemplates.length > 0 || gcalEvents.length > 0) {
+      days.push({ date, occurrences, virtualTemplates, gcalEvents });
+    }
   }
   return days;
 }
@@ -178,7 +225,47 @@ function VirtualOccRow({ template, onEditTemplate }) {
   );
 }
 
-function DaySection({ date, occurrences, virtualTemplates = [], onToggle, onEdit, onRemove, onEditTemplate, isToday }) {
+// A read-only Google Calendar event — see ARCHITECTURE.md §7 ("Google
+// Calendar integration"). No checkbox, no edit/delete; tapping opens the
+// event on calendar.google.com instead, since this app is never the source
+// of truth for it.
+function GCalEventRow({ event }) {
+  const timeLabel = event.allDay
+    ? null
+    : new Date(event.start).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return (
+    <div
+      onClick={() => event.htmlLink && window.open(event.htmlLink, "_blank", "noopener,noreferrer")}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "10px",
+        padding: "10px 14px 10px 12px",
+        borderBottom: `1px solid ${COLORS.border}`,
+        borderLeft: `3px solid ${GCAL_COLOR}`,
+        cursor: event.htmlLink ? "pointer" : "default",
+        opacity: 0.85,
+      }}
+    >
+      <span style={{ width: "24px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+        <Cloud size={12} color={COLORS.dim} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: "13.5px", lineHeight: "1.5", color: COLORS.text, wordBreak: "break-word" }}>
+          {event.summary}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+          <span style={{ fontSize: "9.5px", letterSpacing: "0.5px", color: GCAL_COLOR, textTransform: "uppercase" }}>
+            google calendar
+          </span>
+          {timeLabel && <span style={{ fontSize: "9.5px", color: COLORS.dim }}>{timeLabel}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DaySection({ date, occurrences, virtualTemplates = [], gcalEvents = [], onToggle, onEdit, onRemove, onEditTemplate, isToday }) {
   const label = date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   return (
     <div style={{ marginBottom: "2px" }}>
@@ -196,7 +283,7 @@ function DaySection({ date, occurrences, virtualTemplates = [], onToggle, onEdit
         {label}
         {isToday ? " · today" : ""}
       </div>
-      {occurrences.length === 0 && virtualTemplates.length === 0 ? (
+      {occurrences.length === 0 && virtualTemplates.length === 0 && gcalEvents.length === 0 ? (
         <div style={{ padding: "10px 20px", fontSize: "11.5px", color: COLORS.dim }}>—</div>
       ) : (
         <div style={{ padding: "0 6px" }}>
@@ -205,6 +292,9 @@ function DaySection({ date, occurrences, virtualTemplates = [], onToggle, onEdit
           ))}
           {virtualTemplates.map((template) => (
             <VirtualOccRow key={template.id} template={template} onEditTemplate={onEditTemplate} />
+          ))}
+          {gcalEvents.map((event) => (
+            <GCalEventRow key={event.id} event={event} />
           ))}
         </div>
       )}
@@ -221,6 +311,7 @@ export default function CalendarView() {
   const { tags, loading: tagsLoading } = useTags();
   const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask, updateTask } = useTasks();
   const { templates, loading: templatesLoading, updateTemplate } = useTemplates();
+  const gcal = useGoogleCalendar();
   const [mode, setMode] = usePersistentState("manifest.calendar.mode", "week");
   const today = startOfToday();
   const [anchor, setAnchor] = useState(today);
@@ -346,7 +437,8 @@ export default function CalendarView() {
   // `tasks` list (not the completed-filtered `visibleTasks`) since finding
   // each template's anchor task needs the real done/not-done state.
   const virtualByDate = virtualOccurrencesInRange(templates, tasks, rangeStart, rangeEnd);
-  const chronoDays = mode === "list" ? buildChronologicalDays(today, horizonDays, visibleTasks, virtualByDate) : [];
+  const gcalByDate = gcalEventsByDate(gcal.events);
+  const chronoDays = mode === "list" ? buildChronologicalDays(today, horizonDays, visibleTasks, virtualByDate, gcalByDate) : [];
 
   return (
     <div
@@ -372,6 +464,14 @@ export default function CalendarView() {
               ~/calendar
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <GoogleCalendarButton
+                configured={gcal.configured}
+                connected={gcal.connected}
+                status={gcal.status}
+                error={gcal.error}
+                onConnect={gcal.connect}
+                onDisconnect={gcal.disconnect}
+              />
               <CompletedToggle value={showCompleted} onChange={setShowCompleted} />
               <Segmented value={mode} onChange={setMode} options={MODE_OPTIONS} />
             </div>
@@ -415,7 +515,7 @@ export default function CalendarView() {
               upcoming · scrolling forward from today
             </div>
             {chronoDays.map((d) => (
-              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} virtualTemplates={d.virtualTemplates} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(d.date) === toISO(today)} />
+              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} virtualTemplates={d.virtualTemplates} gcalEvents={d.gcalEvents} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(d.date) === toISO(today)} />
             ))}
             <div ref={sentinelRef} style={{ padding: "24px 20px", textAlign: "center" }}>
               {horizonDays >= 730 ? (
@@ -430,7 +530,7 @@ export default function CalendarView() {
         {/* Week mode */}
         {mode === "week" &&
           weekDays.map((d) => (
-            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} virtualTemplates={virtualByDate.get(toISO(d)) || []} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(d) === toISO(today)} />
+            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} virtualTemplates={virtualByDate.get(toISO(d)) || []} gcalEvents={gcalByDate.get(toISO(d)) || []} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(d) === toISO(today)} />
           ))}
 
         {/* Month mode */}
@@ -447,6 +547,7 @@ export default function CalendarView() {
                   const iso = toISO(cell.date);
                   const dayOccurrences = occurrencesForDay(cell.date);
                   const dayVirtual = virtualByDate.get(iso) || [];
+                  const dayGcal = gcalByDate.get(iso) || [];
                   const isToday = iso === toISO(today);
                   const isSelected = iso === toISO(selectedDate);
                   return (
@@ -482,6 +583,9 @@ export default function CalendarView() {
                           const q = QUADRANTS[quadrantFor(template.urgent, template.important)];
                           return <span key={template.id} style={{ width: "4px", height: "4px", borderRadius: "50%", border: `1px solid ${q.color}` }} />;
                         })}
+                        {dayGcal.slice(0, Math.max(0, 3 - dayOccurrences.length - dayVirtual.length)).map((event) => (
+                          <span key={event.id} style={{ width: "4px", height: "4px", borderRadius: "50%", background: GCAL_COLOR }} />
+                        ))}
                       </div>
                     </div>
                   );
@@ -490,7 +594,7 @@ export default function CalendarView() {
             </div>
 
             <div style={{ marginTop: "16px" }}>
-              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} virtualTemplates={virtualByDate.get(toISO(selectedDate)) || []} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(selectedDate) === toISO(today)} />
+              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} virtualTemplates={virtualByDate.get(toISO(selectedDate)) || []} gcalEvents={gcalByDate.get(toISO(selectedDate)) || []} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(selectedDate) === toISO(today)} />
             </div>
           </>
         )}
