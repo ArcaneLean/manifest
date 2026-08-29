@@ -42,8 +42,9 @@ function virtualOccurrencesInRange(templates, tasks, rangeStart, rangeEnd) {
   for (const template of templates) {
     if (!template.recurring) continue;
     const anchor = tasks.find((t) => t.templateId === template.id && !t.done);
-    if (!anchor?.dueDate) continue;
-    const dates = occurrencesInRange(template.recurring, parseISODate(anchor.dueDate), rangeEnd);
+    const anchorDateISO = anchor?.dueDate || anchor?.startDate;
+    if (!anchorDateISO) continue;
+    const dates = occurrencesInRange(template.recurring, parseISODate(anchorDateISO), rangeEnd);
     for (const d of dates) {
       if (d < rangeStart) continue;
       const iso = toISO(d);

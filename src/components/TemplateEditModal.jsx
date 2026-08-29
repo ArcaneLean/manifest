@@ -12,6 +12,12 @@ const FREQ_OPTIONS = [
   { key: "monthly", label: "monthly" },
 ];
 
+const DATE_FIELD_OPTIONS = [
+  { key: "due", label: "due date" },
+  { key: "start", label: "start date" },
+  { key: "both", label: "both" },
+];
+
 // Modal for editing an existing template's fields — opened by tapping the
 // middle (info) area of a template row, mirroring TaskEditModal.
 export function TemplateEditModal({ template, tags, onSave, onClose }) {
@@ -23,6 +29,7 @@ export function TemplateEditModal({ template, tags, onSave, onClose }) {
   const [freq, setFreq] = useState(template.recurring?.type || "daily");
   const [weekDays, setWeekDays] = useState(template.recurring?.type === "weekly" ? template.recurring.days : [0]);
   const [monthDay, setMonthDay] = useState(template.recurring?.type === "monthly" ? template.recurring.day : 1);
+  const [dateField, setDateField] = useState(template.recurring?.dateField || "due");
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -45,6 +52,7 @@ export function TemplateEditModal({ template, tags, onSave, onClose }) {
       if (freq === "daily") nextRecurring = { type: "daily" };
       else if (freq === "weekly") nextRecurring = { type: "weekly", days: weekDays.length ? weekDays : [0] };
       else if (freq === "monthly") nextRecurring = { type: "monthly", day: monthDay };
+      nextRecurring.dateField = dateField;
     }
     onSave({
       text: trimmed,
@@ -182,6 +190,11 @@ export function TemplateEditModal({ template, tags, onSave, onClose }) {
                 />
               </div>
             )}
+
+            <div style={{ marginTop: "10px" }}>
+              <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>schedule sets</div>
+              <Segmented value={dateField} onChange={setDateField} options={DATE_FIELD_OPTIONS} />
+            </div>
           </div>
         )}
         {tags.length > 0 && (

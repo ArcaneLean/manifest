@@ -81,10 +81,14 @@ interface Template {
   important: boolean;
   tags: string[];
   recurring: null
-    | { type: "daily" }
-    | { type: "weekly"; days: number[] }   // 0=Mon..6=Sun
-    | { type: "monthly"; day: number };    // day-of-month, clamped to month length
+    | { type: "daily"; dateField?: DateField }
+    | { type: "weekly"; days: number[]; dateField?: DateField }   // 0=Mon..6=Sun
+    | { type: "monthly"; day: number; dateField?: DateField };    // day-of-month, clamped to month length
 }
+
+// Which field(s) an instantiated occurrence's date goes on. Absent (legacy
+// templates saved before this setting existed) behaves as "due".
+type DateField = "due" | "start" | "both";
 
 interface Countdown {
   id: string;
@@ -176,26 +180,47 @@ These came up in the process and were deliberately deferred — listed here so t
   going native, `.ics` import/export is the lightweight fallback — not started.
 - **Recurring templates on the Calendar (implemented)**: a recurring template has exactly one
   open, real "anchor" `Task` at a time, linked via `Task.templateId`. It's instantiated when the
-  template is created (or recurring is switched on) and re-instantiated the moment the anchor is
-  *completed* — stepped forward from the anchor's own planned `dueDate` (`advanceOnce` in
-  `src/lib/recurrence.js`), not from today's date, so completing an occurrence early never skips
-  ahead in the schedule. This sidesteps the "browsers can't run JS in the background" problem
-  entirely — there's no scheduler to run, just a completion-triggered handoff, wired once in
-  `useTasks.toggleTask` so it applies no matter which view (Tasks/Matrix/Calendar) completes it.
-  `useTemplates` self-heals on every load: any recurring template missing an open anchor (a new
-  template, `recurring` just switched on, or the anchor deleted directly) gets one created dated
-  today. The Calendar additionally projects further **virtual** occurrences beyond the anchor —
-  computed on demand for whichever date range is on screen (`occurrencesInRange`), never
-  persisted. Tapping a virtual occurrence opens `TemplateEditModal` (editing the series, not one
-  occurrence) rather than a task; virtual occurrences have no checkbox and can't be completed,
-  since they aren't real tasks yet. Distinguished visually from real occurrences with a dashed
-  left border + a repeat icon (list/week rows) or a hollow vs. filled dot (month grid).
-  - **Note on `setState` updaters**: `toggleTask` and `updateTemplate` compute the updated
-    record from the hook's own state (not the `prev` passed into the `setTasks`/`setTemplates`
-    updater) before calling `putTask`/`spawnNextOccurrence`/`ensureAnchor`. React may invoke an
-    updater function more than once per call (e.g. Strict Mode in dev); `putTask` is idempotent
-    either way, but `spawnNextOccurrence` mints a new task id, so running it twice would double
-    up the next occurrence.
+  template is created (or recurring is switched on), dated on the schedule's actual **first
+  occurrence on or after today** (`firstOccurrenceOnOrAfter` in `src/lib/recurrence.js` —
+  today itself if it already matches the rule, otherwise the next matching date; never just
+  "today" regardless of the rule). It's then re-instantiated whenever the current anchor is
+  resolved — either *completed*, or *deleted* (deletion is treated as "skip this occurrence",
+  not "end the series" — see below) — stepped forward from the anchor's own planned date
+  (`advanceOnce`), not from today's date, so resolving an occurrence early never skips ahead in
+  the schedule. This sidesteps the "browsers can't run JS in the background" problem entirely —
+  there's no scheduler to run, just a resolution-triggered handoff
+  (`useTasks.spawnNextOccurrence`), called from both `toggleTask` and `removeTask` so it applies
+  no matter which view (Tasks/Matrix/Calendar) completes or deletes it. `useTemplates`
+  self-heals on every load: any recurring template missing an open anchor (a new template,
+  `recurring` just switched on, or an anchor that somehow still ended up missing) gets one
+  created on the schedule's first occurrence on/after today. The Calendar additionally projects
+  further **virtual** occurrences beyond the anchor — computed on demand for whichever date
+  range is on screen (`occurrencesInRange`), never persisted. Tapping a virtual occurrence opens
+  `TemplateEditModal` (editing the series, not one occurrence) rather than a task; virtual
+  occurrences have no checkbox and can't be completed, since they aren't real tasks yet.
+  Distinguished visually from real occurrences with a dashed left border + a repeat icon
+  (list/week rows) or a hollow vs. filled dot (month grid).
+  - **Anchor date field**: `Template.recurring.dateField` ("due" | "start" | "both", default
+    "due") controls whether an instantiated occurrence gets a `dueDate`, a `startDate`, or both
+    (set to the same occurrence date — there's no due-offset between them; see the still-open
+    item below). Chosen via a `Segmented` control in the template builder and
+    `TemplateEditModal`. `recurrence.occurrenceDates(template, date)` is the shared helper both
+    `useTemplates.ensureAnchor` and `useTasks.spawnNextOccurrence` use to turn an occurrence date
+    into the `{startDate, dueDate}` pair actually stored on the task.
+  - **Deleting the anchor = skip, not end series**: `useTasks.removeTask` treats deleting an
+    open (`!done`) anchor task the same as completing it — it calls `spawnNextOccurrence` (keyed
+    off the deleted task's own planned date) before removing it, so a new anchor takes its place
+    immediately instead of the template silently losing its anchor (and disappearing from the
+    Calendar's virtual-occurrence projection, which needs an anchor date to project from) until
+    the next load's self-heal. Deleting a *completed* occurrence (history cleanup) does not
+    re-spawn, since completing it already did.
+  - **Note on `setState` updaters**: `toggleTask`, `removeTask`, and `updateTemplate` compute the
+    updated/removed record from the hook's own state (not the `prev` passed into the
+    `setTasks`/`setTemplates` updater) before calling
+    `putTask`/`deleteTask`/`spawnNextOccurrence`/`ensureAnchor`. React may invoke an updater
+    function more than once per call (e.g. Strict Mode in dev); `putTask`/`deleteTask` are
+    idempotent either way, but `spawnNextOccurrence` mints a new task id, so running it twice
+    would double up the next occurrence.
 - **Templates vs. routines/checklists**: templates were simplified to single-task presets.
   The earlier "bundle of N tasks run together" concept is a distinct, deferred feature —
   needs a name (routines? checklists? playbooks?) and its own view if built.
@@ -232,10 +257,12 @@ These came up in the process and were deliberately deferred — listed here so t
   - **Still open**: due dates come in soft (self-imposed, "finish by Friday") and hard
     (external deadline) flavors — needs a way to mark which, e.g. `dueDateStrict: boolean`. Not
     designed further, not implemented.
-  - **Resolved**: recurring templates now generate a `dueDate` on the anchor task they
-    instantiate (see "Recurring templates on the Calendar" above) — always the occurrence's own
-    scheduled date, no `startDate`. **Still open**: an optional due-offset on the template (e.g.
-    "+3 days") would cover cases like a weekly timesheet (instantiated Monday, due Friday).
+  - **Resolved**: recurring templates generate a `startDate`, a `dueDate`, or both on the anchor
+    task they instantiate, per `Template.recurring.dateField` (see "Recurring templates on the
+    Calendar" above) — always the occurrence's own scheduled date on whichever field(s) are
+    configured. **Still open**: an optional due-offset on the template (e.g. "+3 days") would
+    cover cases like a weekly timesheet (instantiated Monday, due Friday) when `dateField` is
+    "both".
 
 ## 8. Suggested build order for Claude Code
 

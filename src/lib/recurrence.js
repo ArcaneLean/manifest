@@ -1,7 +1,13 @@
 // Recurring-template helpers — see ARCHITECTURE.md §4 (Template.recurring).
 // Ported from prototypes/TemplatesView.jsx.
 
+import { toISO } from "./dateUtils.js";
+
 export const DAY_LABELS = ["mo", "tu", "we", "th", "fr", "sa", "su"];
+
+// A rule's default anchor date field when a template predates `dateField`
+// (see occurrenceDates below) — preserves the original due-date-only behavior.
+export const DEFAULT_DATE_FIELD = "due";
 
 // Steps a recurring rule forward once from `date`, e.g. from the currently
 // scheduled occurrence's own date — not from "today" — so completing an
@@ -28,6 +34,43 @@ export function advanceOnce(rule, date) {
     return cur;
   }
   return d;
+}
+
+// Whether `date` itself already lands on a valid occurrence of `rule` —
+// used by firstOccurrenceOnOrAfter so seeding a new anchor doesn't skip past
+// today when today already matches the schedule.
+function matchesRule(rule, date) {
+  if (rule.type === "daily") return true;
+  if (rule.type === "weekly") {
+    const wd = (date.getDay() + 6) % 7;
+    return rule.days.includes(wd);
+  }
+  if (rule.type === "monthly") {
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    return date.getDate() === Math.min(rule.day, lastDay);
+  }
+  return false;
+}
+
+// The first occurrence of `rule` on or after `date` — used to seed a new
+// template's anchor task on the schedule's actual next occurrence, rather
+// than always defaulting the anchor to today regardless of the rule.
+export function firstOccurrenceOnOrAfter(rule, date) {
+  if (matchesRule(rule, date)) return new Date(date);
+  return advanceOnce(rule, date);
+}
+
+// Maps an occurrence `date` to the {startDate, dueDate} pair to store on the
+// anchor/next task, per the template's recurring.dateField ("due" | "start"
+// | "both"; defaults to "due" for templates saved before this setting
+// existed, matching the original due-date-only behavior).
+export function occurrenceDates(template, date) {
+  const field = template.recurring?.dateField || DEFAULT_DATE_FIELD;
+  const iso = toISO(date);
+  return {
+    startDate: field === "start" || field === "both" ? iso : null,
+    dueDate: field === "due" || field === "both" ? iso : null,
+  };
 }
 
 // Occurrence dates strictly after `fromDate` (a template's anchor task date)
