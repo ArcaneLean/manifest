@@ -6,6 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0d0d0c" />
     <title>Manifest</title>
+    <!-- Google Identity Services — OAuth token client for the optional
+         read-only Google Calendar sync, see ARCHITECTURE.md §7. Loaded
+         from Google directly (not bundled/precached) since it's a live
+         auth library, not a static asset. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div id="root"></div>
