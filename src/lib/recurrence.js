@@ -3,7 +3,10 @@
 
 export const DAY_LABELS = ["mo", "tu", "we", "th", "fr", "sa", "su"];
 
-function advanceOnce(rule, date) {
+// Steps a recurring rule forward once from `date`, e.g. from the currently
+// scheduled occurrence's own date — not from "today" — so completing an
+// occurrence early never skips ahead to catch up with the calendar.
+export function advanceOnce(rule, date) {
   const d = new Date(date);
   if (rule.type === "daily") {
     d.setDate(d.getDate() + 1);
@@ -27,15 +30,20 @@ function advanceOnce(rule, date) {
   return d;
 }
 
-export function nextDueDate(rule, lastRun, today) {
-  if (!lastRun) return today;
-  let candidate = advanceOnce(rule, lastRun);
+// Occurrence dates strictly after `fromDate` (a template's anchor task date)
+// up to and including `untilDate` — the virtual/projected occurrences shown
+// on the Calendar beyond the one real anchor task. Never persisted.
+export function occurrencesInRange(rule, fromDate, untilDate) {
+  const dates = [];
+  let cur = fromDate;
   let guard = 0;
-  while (candidate < today && guard < 400) {
-    candidate = advanceOnce(rule, candidate);
+  while (guard < 400) {
+    cur = advanceOnce(rule, cur);
+    if (cur > untilDate) break;
+    dates.push(cur);
     guard++;
   }
-  return candidate;
+  return dates;
 }
 
 function ordinal(n) {

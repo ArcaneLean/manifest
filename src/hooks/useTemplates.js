@@ -1,6 +1,34 @@
 import { useEffect, useState } from "react";
 import { listTemplates, putTemplate, deleteTemplate } from "../lib/templatesRepo.js";
-import { toISO } from "../lib/dateUtils.js";
+import { listTasks, putTask } from "../lib/tasksRepo.js";
+import { toISO, startOfToday } from "../lib/dateUtils.js";
+
+// Ensures a recurring template has exactly one open "anchor" task (the one
+// real, completable Task linked via templateId — see ARCHITECTURE.md §7).
+// Called on template creation, whenever recurring is switched on, and as a
+// self-healing check on load (covers legacy templates and an anchor the
+// user deleted directly). No-op for one-off templates or templates that
+// already have an open anchor.
+async function ensureAnchor(template) {
+  if (!template.recurring) return;
+  const existing = await listTasks();
+  const hasOpenAnchor = existing.some((t) => t.templateId === template.id && !t.done);
+  if (hasOpenAnchor) return;
+  const anchor = {
+    id: crypto.randomUUID(),
+    text: template.text,
+    done: false,
+    urgent: template.urgent,
+    important: template.important,
+    tags: template.tags,
+    startDate: null,
+    dueDate: toISO(startOfToday()),
+    templateId: template.id,
+    createdAt: Date.now(),
+    completedAt: null,
+  };
+  await putTask(anchor);
+}
 
 export function useTemplates() {
   const [templates, setTemplates] = useState([]);
@@ -9,10 +37,10 @@ export function useTemplates() {
   useEffect(() => {
     let cancelled = false;
     listTemplates().then((loaded) => {
-      if (!cancelled) {
-        setTemplates(loaded);
-        setLoading(false);
-      }
+      if (cancelled) return;
+      setTemplates(loaded);
+      setLoading(false);
+      loaded.filter((t) => t.recurring).forEach(ensureAnchor);
     });
     return () => {
       cancelled = true;
@@ -26,11 +54,11 @@ export function useTemplates() {
       urgent,
       important,
       recurring,
-      lastRun: null,
       tags: templateTags,
     };
     setTemplates((prev) => [...prev, template]);
     putTemplate(template);
+    if (recurring) ensureAnchor(template);
   };
 
   const removeTemplate = (id) => {
@@ -38,25 +66,17 @@ export function useTemplates() {
     deleteTemplate(id);
   };
 
+  // Reads `templates` (this hook's own state), not the setTemplates
+  // updater's `prev`, so the side effects below run exactly once — see the
+  // same note on useTasks.toggleTask.
   const updateTemplate = (id, updates) => {
-    setTemplates((prev) => {
-      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
-      const updated = next.find((t) => t.id === id);
-      if (updated) putTemplate(updated);
-      return next;
-    });
+    const current = templates.find((t) => t.id === id);
+    if (!current) return;
+    const updated = { ...current, ...updates };
+    setTemplates((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    putTemplate(updated);
+    if (updated.recurring) ensureAnchor(updated);
   };
 
-  // Marks a recurring template as run today (one-off templates don't track lastRun).
-  const markRunToday = (id) => {
-    const today = toISO(new Date());
-    setTemplates((prev) => {
-      const next = prev.map((t) => (t.id === id ? { ...t, lastRun: today } : t));
-      const updated = next.find((t) => t.id === id);
-      if (updated) putTemplate(updated);
-      return next;
-    });
-  };
-
-  return { templates, loading, addTemplate, removeTemplate, updateTemplate, markRunToday };
+  return { templates, loading, addTemplate, removeTemplate, updateTemplate };
 }
