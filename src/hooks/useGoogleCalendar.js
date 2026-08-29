@@ -7,12 +7,16 @@ import { syncGoogleCalendar } from "../lib/googleCalendarSync.js";
 // "connected" only records that the user has granted access before — the
 // access token itself is never persisted (see googleAuth.js), so on reload
 // this drives a silent (non-interactive) token re-request rather than
-// re-showing the consent screen. See ARCHITECTURE.md §7 ("Google Calendar
-// integration").
+// re-showing the consent screen. "visible" is independent of "connected":
+// it just toggles whether the already-cached events are shown, so the
+// button's normal click never touches the sync (no cache wipe, no re-auth) —
+// see ARCHITECTURE.md §7 ("Google Calendar integration").
 const CONNECTED_KEY = "manifest.gcal.connected";
+const VISIBLE_KEY = "manifest.gcal.visible";
 
 export function useGoogleCalendar() {
   const [connected, setConnected] = usePersistentState(CONNECTED_KEY, false);
+  const [visible, setVisible] = usePersistentState(VISIBLE_KEY, true);
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | syncing | error
   const [error, setError] = useState(null);
@@ -57,24 +61,32 @@ export function useGoogleCalendar() {
     return ok;
   }, [sync, setConnected]);
 
+  // Full disconnect: revokes the grant and drops the cache, so the next
+  // connect needs interactive re-auth. Distinct from toggleVisible, which
+  // just hides/shows what's already cached.
   const disconnect = useCallback(async () => {
     revokeGoogleAccess();
     await clearGCalEvents();
     await clearGCalMeta();
     setConnected(false);
+    setVisible(true);
     setEvents([]);
     setStatus("idle");
     setError(null);
-  }, [setConnected]);
+  }, [setConnected, setVisible]);
+
+  const toggleVisible = useCallback(() => setVisible((v) => !v), [setVisible]);
 
   return {
     configured: isGoogleAuthConfigured(),
     connected,
-    events,
+    visible,
+    events: visible ? events : [],
     status,
     error,
     connect,
     disconnect,
+    toggleVisible,
     refresh: () => sync({ interactive: false }),
   };
 }

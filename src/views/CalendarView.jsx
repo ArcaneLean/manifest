@@ -467,9 +467,11 @@ export default function CalendarView() {
               <GoogleCalendarButton
                 configured={gcal.configured}
                 connected={gcal.connected}
+                visible={gcal.visible}
                 status={gcal.status}
                 error={gcal.error}
                 onConnect={gcal.connect}
+                onToggleVisible={gcal.toggleVisible}
                 onDisconnect={gcal.disconnect}
               />
               <CompletedToggle value={showCompleted} onChange={setShowCompleted} />

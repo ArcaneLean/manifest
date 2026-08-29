@@ -196,6 +196,12 @@ These came up in the process and were deliberately deferred — listed here so t
     drives a **silent** (`prompt: ""`) token re-request on load rather than a popup; if that
     fails (expired Google session), the UI just falls back to the last-synced cache until the
     user reconnects.
+  - **Show/hide vs. disconnect**: a plain click on the connect button (`GoogleCalendarButton.jsx`)
+    once connected only flips a second persisted flag, `manifest.gcal.visible`
+    (`usePersistentState`) — it hides or reveals the already-cached events with no network call,
+    no re-auth, and no cache wipe. Actually disconnecting (`revokeGoogleAccess` plus dropping the
+    `gcalEvents`/`gcalMeta` caches, which requires interactive re-auth to undo) is right-click
+    only, so the destructive action isn't one accidental click away from the show/hide toggle.
   - **Cache + incremental sync**: `src/lib/googleCalendarSync.js` lists every calendar on the
     account (`users/me/calendarList`, skipping ones marked `deleted`) and syncs each one
     independently — Google issues `syncToken`s per calendar, not per account, so `gcalMeta`
