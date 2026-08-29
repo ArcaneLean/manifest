@@ -178,8 +178,10 @@ These came up in the process and were deliberately deferred — listed here so t
   API (Android `CalendarContract`, iOS EventKit). Would require moving off pure PWA (e.g.
   Capacitor + a calendar plugin), which conflicts with §1's PWA-only stance. If revisited without
   going native, `.ics` import/export is the lightweight fallback — not started.
-- **Google Calendar integration (implemented)**: read-only sync of the signed-in user's primary
-  Google Calendar into the Calendar view, entirely client-side (no backend, per §1) — auth via
+- **Google Calendar integration (implemented)**: read-only sync of every calendar on the
+  signed-in user's account (not just their primary calendar — enumerated via
+  `users/me/calendarList`) into the Calendar view, entirely client-side (no backend, per §1) — auth
+  via
   Google Identity Services' OAuth token client (`src/lib/googleAuth.js`, GIS script loaded in
   `index.html`), scoped to `calendar.readonly`. Two other approaches were considered and rejected:
   an "app password" (Google doesn't support one for the Calendar API — OAuth is required
@@ -194,13 +196,22 @@ These came up in the process and were deliberately deferred — listed here so t
     drives a **silent** (`prompt: ""`) token re-request on load rather than a popup; if that
     fails (expired Google session), the UI just falls back to the last-synced cache until the
     user reconnects.
-  - **Cache + incremental sync**: fetched events are normalized (`{id, summary, start, end,
-    allDay, htmlLink}`) and cached in a new `gcalEvents` IndexedDB store (`src/lib/gcalRepo.js`,
-    bumping `DB_VERSION` to 2 — see `ensureStore` guard in `db.js` for why every store creation
-    is now idempotent, not just the new ones). `src/lib/googleCalendarSync.js` uses the Calendar
-    API's `syncToken` for incremental refreshes once available (falling back to a bounded
-    `[-30d, +730d]` window on first sync, matching the Calendar view's own list-mode horizon),
-    and does a full resync if the token goes stale (API returns 410).
+  - **Cache + incremental sync**: `src/lib/googleCalendarSync.js` lists every calendar on the
+    account (`users/me/calendarList`, skipping ones marked `deleted`) and syncs each one
+    independently — Google issues `syncToken`s per calendar, not per account, so `gcalMeta`
+    (`src/lib/gcalRepo.js`) holds one row per calendar (keyed by `calendarId`) rather than a
+    single fixed row, and does a full resync of just that calendar if its token goes stale (API
+    returns 410). One calendar failing (e.g. a stale grant on a single shared calendar) doesn't
+    block the others; it only surfaces as an error if every calendar failed. First sync per
+    calendar falls back to a bounded `[-30d, +730d]` window, matching the Calendar view's own
+    list-mode horizon. Fetched events are normalized (`{key, id, calendarId, calendarSummary,
+    summary, start, end, allDay, htmlLink}`) and cached in the `gcalEvents` IndexedDB store, keyed
+    by `${calendarId}:${eventId}` since an event id is only unique within its own calendar
+    (`DB_VERSION` 3 — the store is recreated rather than migrated on the version bump, since this
+    is a rebuildable read-only cache, not user data; see `ensureStore` guard in `db.js` for why
+    every other store creation is idempotent regardless). Calendars that disappear from the
+    account (removed, unsubscribed, access revoked) have their cached events and meta dropped on
+    the next sync.
   - **Rendering**: `CalendarView.jsx` renders gcal events as a third, read-only occurrence type
     alongside real tasks and virtual recurring occurrences — solid steel-blue left border
     (`GCAL_COLOR`, deliberately outside both the quadrant and `TAG_PALETTE` color families, same
