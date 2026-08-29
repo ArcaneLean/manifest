@@ -10,7 +10,20 @@ export const COLORS = {
   amber: "#ffb000",
   amberDim: "#8a6a2a",
   sage: "#7c9070",
+  // Negative-habit accent — a separate hue from both the priority colors
+  // and TAG_PALETTE, so "habit I'm trying to cut down on" reads distinctly
+  // from either coding system.
+  danger: "#b5453d",
 };
+
+// Applies alpha to one of the hex colors above, e.g. for heatmap intensity
+// levels. `hex` must be a plain "#rrggbb" string (no shorthand/alpha).
+export function withAlpha(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 // Curated tag palette — a deliberately separate hue family from the
 // priority colors above, so tag chips never compete with priority stripes.
