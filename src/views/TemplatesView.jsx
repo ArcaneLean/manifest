@@ -10,6 +10,7 @@ import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { TagChip, TagPickerChip } from "../components/TagChip.jsx";
+import { TemplateEditModal } from "../components/TemplateEditModal.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { startOfToday, parseISODate, daysBetween } from "../lib/dateUtils.js";
@@ -43,7 +44,7 @@ function CounterBadge({ days }) {
   );
 }
 
-function TemplateRow({ template, today, tagById, onRun, onDelete }) {
+function TemplateRow({ template, today, tagById, onRun, onDelete, onEdit }) {
   const q = QUADRANTS[quadrantFor(template.urgent, template.important)];
   const isRecurring = !!template.recurring;
   const lastRun = template.lastRun ? parseISODate(template.lastRun) : null;
@@ -53,7 +54,7 @@ function TemplateRow({ template, today, tagById, onRun, onDelete }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "14px 16px 14px 16px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${q.color}` }}>
       {isRecurring && <CounterBadge days={daysUntil} />}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div onClick={() => onEdit(template.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
         <div style={{ fontSize: "14.5px", color: COLORS.text, lineHeight: "1.4", wordBreak: "break-word" }}>{template.text}</div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
           <span style={{ fontSize: "10px", letterSpacing: "0.5px", color: q.color, textTransform: "uppercase" }}>{q.label}</span>
@@ -97,9 +98,10 @@ function TemplateRow({ template, today, tagById, onRun, onDelete }) {
 export default function TemplatesView() {
   const { tags, loading: tagsLoading } = useTags();
   const { addTask } = useTasks();
-  const { templates, loading: templatesLoading, addTemplate, removeTemplate, markRunToday } = useTemplates();
+  const { templates, loading: templatesLoading, addTemplate, removeTemplate, updateTemplate, markRunToday } = useTemplates();
   const [runLog, setRunLog] = useState([]);
   const [building, setBuilding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [textDraft, setTextDraft] = useState("");
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
@@ -119,6 +121,7 @@ export default function TemplatesView() {
   }, [building]);
 
   const tagById = (id) => tags.find((t) => t.id === id);
+  const editingTemplate = editingId ? templates.find((t) => t.id === editingId) : null;
 
   const runTemplate = (template) => {
     const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -249,11 +252,13 @@ export default function TemplatesView() {
                     {group.tag ? group.tag.name : "untagged"}
                   </div>
                   {group.items.map((t) => (
-                    <TemplateRow key={t.id} template={t} today={today} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} />
+                    <TemplateRow key={t.id} template={t} today={today} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
                   ))}
                 </div>
               ))
-            : filtered.map((t) => <TemplateRow key={t.id} template={t} today={today} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} />)}
+            : filtered.map((t) => (
+                <TemplateRow key={t.id} template={t} today={today} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+              ))}
 
           {!dataLoading && templates.length === 0 && !building && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
@@ -441,6 +446,18 @@ export default function TemplatesView() {
           >
             <Plus size={24} color={COLORS.bg} strokeWidth={2.5} />
           </button>
+        )}
+
+        {editingTemplate && (
+          <TemplateEditModal
+            template={editingTemplate}
+            tags={tags}
+            onClose={() => setEditingId(null)}
+            onSave={(updates) => {
+              updateTemplate(editingTemplate.id, updates);
+              setEditingId(null);
+            }}
+          />
         )}
       </div>
     </div>

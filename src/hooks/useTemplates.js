@@ -38,6 +38,15 @@ export function useTemplates() {
     deleteTemplate(id);
   };
 
+  const updateTemplate = (id, updates) => {
+    setTemplates((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
+      const updated = next.find((t) => t.id === id);
+      if (updated) putTemplate(updated);
+      return next;
+    });
+  };
+
   // Marks a recurring template as run today (one-off templates don't track lastRun).
   const markRunToday = (id) => {
     const today = toISO(new Date());
@@ -49,5 +58,5 @@ export function useTemplates() {
     });
   };
 
-  return { templates, loading, addTemplate, removeTemplate, markRunToday };
+  return { templates, loading, addTemplate, removeTemplate, updateTemplate, markRunToday };
 }
