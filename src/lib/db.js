@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise = null;
 
@@ -28,9 +28,17 @@ export function getDB() {
         ensureStore(db, "worklog", { keyPath: "date" });
         ensureStore(db, "weektargets", { keyPath: "weekStartISO" });
         // Google Calendar read-only sync cache — see ARCHITECTURE.md §7
-        // ("Google Calendar integration").
-        ensureStore(db, "gcalEvents", { keyPath: "id" });
-        ensureStore(db, "gcalMeta", { keyPath: "key" });
+        // ("Google Calendar integration"). v3: now caches every calendar on
+        // the account, not just the primary one, so events are keyed by
+        // `${calendarId}:${eventId}` (an event id is only unique within its
+        // own calendar) and meta is one row per calendar (keyed by
+        // calendarId) rather than a single fixed row. Recreated rather than
+        // migrated in place — this is a rebuildable read-only cache, not
+        // user data.
+        if (db.objectStoreNames.contains("gcalEvents")) db.deleteObjectStore("gcalEvents");
+        if (db.objectStoreNames.contains("gcalMeta")) db.deleteObjectStore("gcalMeta");
+        db.createObjectStore("gcalEvents", { keyPath: "key" });
+        db.createObjectStore("gcalMeta", { keyPath: "calendarId" });
       },
     });
   }

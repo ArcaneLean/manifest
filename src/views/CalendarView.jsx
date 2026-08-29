@@ -294,7 +294,7 @@ function DaySection({ date, occurrences, virtualTemplates = [], gcalEvents = [],
             <VirtualOccRow key={template.id} template={template} onEditTemplate={onEditTemplate} />
           ))}
           {gcalEvents.map((event) => (
-            <GCalEventRow key={event.id} event={event} />
+            <GCalEventRow key={event.key} event={event} />
           ))}
         </div>
       )}
@@ -584,7 +584,7 @@ export default function CalendarView() {
                           return <span key={template.id} style={{ width: "4px", height: "4px", borderRadius: "50%", border: `1px solid ${q.color}` }} />;
                         })}
                         {dayGcal.slice(0, Math.max(0, 3 - dayOccurrences.length - dayVirtual.length)).map((event) => (
-                          <span key={event.id} style={{ width: "4px", height: "4px", borderRadius: "50%", background: GCAL_COLOR }} />
+                          <span key={event.key} style={{ width: "4px", height: "4px", borderRadius: "50%", background: GCAL_COLOR }} />
                         ))}
                       </div>
                     </div>
