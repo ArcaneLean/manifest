@@ -1,19 +1,22 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, X, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock } from "lucide-react";
+import { Plus, X, ChevronLeft, ChevronRight, Hourglass, Flag, CalendarClock, Repeat } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
+import { useTemplates } from "../hooks/useTemplates.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { CompletedToggle } from "../components/CompletedToggle.jsx";
 import { TaskEditModal } from "../components/TaskEditModal.jsx";
+import { TemplateEditModal } from "../components/TemplateEditModal.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
-import { toISO, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
+import { toISO, parseISODate, startOfToday, startOfWeekMonday, addDays, addMonths, buildMonthGrid } from "../lib/dateUtils.js";
+import { occurrencesInRange } from "../lib/recurrence.js";
 
 // A task appears on its startDate day and/or its dueDate day — see
 // ARCHITECTURE.md §7 ("Start date / due date split"). Deliberately two
@@ -28,6 +31,27 @@ function occurrencesForDate(tasks, iso) {
     else if (isDue) occurrences.push({ task: t, kind: "due" });
   }
   return occurrences;
+}
+
+// Projected occurrences for recurring templates, beyond each template's one
+// real "anchor" task — see ARCHITECTURE.md §7. Computed fresh per render for
+// whatever date range is currently visible; nothing here is persisted.
+// Returns a Map<iso, Template[]>.
+function virtualOccurrencesInRange(templates, tasks, rangeStart, rangeEnd) {
+  const byDate = new Map();
+  for (const template of templates) {
+    if (!template.recurring) continue;
+    const anchor = tasks.find((t) => t.templateId === template.id && !t.done);
+    if (!anchor?.dueDate) continue;
+    const dates = occurrencesInRange(template.recurring, parseISODate(anchor.dueDate), rangeEnd);
+    for (const d of dates) {
+      if (d < rangeStart) continue;
+      const iso = toISO(d);
+      if (!byDate.has(iso)) byDate.set(iso, []);
+      byDate.get(iso).push(template);
+    }
+  }
+  return byDate;
 }
 
 function OccIcon({ kind }) {
@@ -48,12 +72,13 @@ const MODE_OPTIONS = [
   { key: "month", label: "month" },
 ];
 
-function buildChronologicalDays(fromDate, horizonDays, tasks) {
+function buildChronologicalDays(fromDate, horizonDays, tasks, virtualByDate) {
   const days = [];
   for (let i = 0; i < horizonDays; i++) {
     const date = addDays(fromDate, i);
     const occurrences = occurrencesForDate(tasks, toISO(date));
-    if (occurrences.length > 0) days.push({ date, occurrences });
+    const virtualTemplates = virtualByDate.get(toISO(date)) || [];
+    if (occurrences.length > 0 || virtualTemplates.length > 0) days.push({ date, occurrences, virtualTemplates });
   }
   return days;
 }
@@ -115,7 +140,44 @@ function TaskRow({ occ, onToggle, onEdit, onRemove }) {
   );
 }
 
-function DaySection({ date, occurrences, onToggle, onEdit, onRemove, isToday }) {
+// A projected occurrence of a recurring template — not a real, completable
+// task. Tapping it edits the template itself rather than one occurrence
+// (see ARCHITECTURE.md §7), so there's no checkbox and no delete.
+function VirtualOccRow({ template, onEditTemplate }) {
+  const q = QUADRANTS[quadrantFor(template.urgent, template.important)];
+  return (
+    <div
+      onClick={() => onEditTemplate(template.id)}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "10px",
+        padding: "10px 14px 10px 12px",
+        borderBottom: `1px solid ${COLORS.border}`,
+        borderLeft: `3px dashed ${q.color}`,
+        cursor: "pointer",
+        opacity: 0.7,
+      }}
+    >
+      <span style={{ width: "24px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+        <Repeat size={12} color={COLORS.dim} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: "13.5px", lineHeight: "1.5", color: COLORS.text, wordBreak: "break-word" }}>
+          {template.text}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+          <span style={{ fontSize: "9.5px", letterSpacing: "0.5px", color: q.color, textTransform: "uppercase" }}>
+            {q.label}
+          </span>
+          <span style={{ fontSize: "9.5px", color: COLORS.dim }}>recurring</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DaySection({ date, occurrences, virtualTemplates = [], onToggle, onEdit, onRemove, onEditTemplate, isToday }) {
   const label = date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   return (
     <div style={{ marginBottom: "2px" }}>
@@ -133,12 +195,15 @@ function DaySection({ date, occurrences, onToggle, onEdit, onRemove, isToday }) 
         {label}
         {isToday ? " · today" : ""}
       </div>
-      {occurrences.length === 0 ? (
+      {occurrences.length === 0 && virtualTemplates.length === 0 ? (
         <div style={{ padding: "10px 20px", fontSize: "11.5px", color: COLORS.dim }}>—</div>
       ) : (
         <div style={{ padding: "0 6px" }}>
           {occurrences.map((occ) => (
             <TaskRow key={occ.task.id} occ={occ} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />
+          ))}
+          {virtualTemplates.map((template) => (
+            <VirtualOccRow key={template.id} template={template} onEditTemplate={onEditTemplate} />
           ))}
         </div>
       )}
@@ -154,12 +219,14 @@ function DaySection({ date, occurrences, onToggle, onEdit, onRemove, isToday }) 
 export default function CalendarView() {
   const { tags, loading: tagsLoading } = useTags();
   const { tasks, loading: tasksLoading, toggleTask, addTask, removeTask, updateTask } = useTasks();
+  const { templates, loading: templatesLoading, updateTemplate } = useTemplates();
   const [mode, setMode] = usePersistentState("manifest.calendar.mode", "week");
   const today = startOfToday();
   const [anchor, setAnchor] = useState(today);
   const [selectedDate, setSelectedDate] = useState(today);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [draft, setDraft] = useState("");
   const [draftStartDate, setDraftStartDate] = useState("");
   const [draftDueDate, setDraftDueDate] = useState(toISO(today));
@@ -194,6 +261,7 @@ export default function CalendarView() {
   const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.done);
 
   const editingTask = editingId ? tasks.find((t) => t.id === editingId) : null;
+  const editingTemplate = editingTemplateId ? templates.find((t) => t.id === editingTemplateId) : null;
 
   const occurrencesForDay = (d) => occurrencesForDate(visibleTasks, toISO(d));
 
@@ -250,22 +318,34 @@ export default function CalendarView() {
   let periodLabel = "";
   let weekDays = [];
   let monthCells = [];
-  let chronoDays = [];
+  let rangeStart = today;
+  let rangeEnd = today;
 
   if (mode === "list") {
-    chronoDays = buildChronologicalDays(today, horizonDays, visibleTasks);
+    rangeEnd = addDays(today, horizonDays);
   } else if (mode === "week") {
     const start = startOfWeekMonday(anchor);
     weekDays = Array.from({ length: 7 }, (_, i) => addDays(start, i));
     const end = weekDays[6];
+    rangeStart = start;
+    rangeEnd = end;
     const sameMonth = start.getMonth() === end.getMonth();
     periodLabel = sameMonth
       ? `${start.getDate()}–${end.getDate()} ${start.toLocaleDateString("en-GB", { month: "short" }).toLowerCase()}`
       : `${start.getDate()} ${start.toLocaleDateString("en-GB", { month: "short" }).toLowerCase()} – ${end.getDate()} ${end.toLocaleDateString("en-GB", { month: "short" }).toLowerCase()}`;
   } else {
     monthCells = buildMonthGrid(anchor);
+    rangeStart = monthCells[0].date;
+    rangeEnd = monthCells[monthCells.length - 1].date;
     periodLabel = anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric" }).toLowerCase();
   }
+
+  // Virtual (projected) recurring occurrences for whatever range is on
+  // screen — recomputed per render, never persisted. Keyed off the full
+  // `tasks` list (not the completed-filtered `visibleTasks`) since finding
+  // each template's anchor task needs the real done/not-done state.
+  const virtualByDate = virtualOccurrencesInRange(templates, tasks, rangeStart, rangeEnd);
+  const chronoDays = mode === "list" ? buildChronologicalDays(today, horizonDays, visibleTasks, virtualByDate) : [];
 
   return (
     <div
@@ -334,7 +414,7 @@ export default function CalendarView() {
               upcoming · scrolling forward from today
             </div>
             {chronoDays.map((d) => (
-              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} isToday={toISO(d.date) === toISO(today)} />
+              <DaySection key={toISO(d.date)} date={d.date} occurrences={d.occurrences} virtualTemplates={d.virtualTemplates} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(d.date) === toISO(today)} />
             ))}
             <div ref={sentinelRef} style={{ padding: "24px 20px", textAlign: "center" }}>
               {horizonDays >= 730 ? (
@@ -349,7 +429,7 @@ export default function CalendarView() {
         {/* Week mode */}
         {mode === "week" &&
           weekDays.map((d) => (
-            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} isToday={toISO(d) === toISO(today)} />
+            <DaySection key={toISO(d)} date={d} occurrences={occurrencesForDay(d)} virtualTemplates={virtualByDate.get(toISO(d)) || []} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(d) === toISO(today)} />
           ))}
 
         {/* Month mode */}
@@ -365,6 +445,7 @@ export default function CalendarView() {
                 {monthCells.map((cell) => {
                   const iso = toISO(cell.date);
                   const dayOccurrences = occurrencesForDay(cell.date);
+                  const dayVirtual = virtualByDate.get(iso) || [];
                   const isToday = iso === toISO(today);
                   const isSelected = iso === toISO(selectedDate);
                   return (
@@ -396,6 +477,10 @@ export default function CalendarView() {
                           const q = QUADRANTS[quadrantFor(occ.task.urgent, occ.task.important)];
                           return <span key={occ.task.id} style={{ width: "4px", height: "4px", borderRadius: "50%", background: occ.task.done ? COLORS.border : q.color }} />;
                         })}
+                        {dayVirtual.slice(0, Math.max(0, 3 - dayOccurrences.length)).map((template) => {
+                          const q = QUADRANTS[quadrantFor(template.urgent, template.important)];
+                          return <span key={template.id} style={{ width: "4px", height: "4px", borderRadius: "50%", border: `1px solid ${q.color}` }} />;
+                        })}
                       </div>
                     </div>
                   );
@@ -404,7 +489,7 @@ export default function CalendarView() {
             </div>
 
             <div style={{ marginTop: "16px" }}>
-              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} isToday={toISO(selectedDate) === toISO(today)} />
+              <DaySection date={selectedDate} occurrences={occurrencesForDay(selectedDate)} virtualTemplates={virtualByDate.get(toISO(selectedDate)) || []} onToggle={toggleTask} onEdit={setEditingId} onRemove={removeTask} onEditTemplate={setEditingTemplateId} isToday={toISO(selectedDate) === toISO(today)} />
             </div>
           </>
         )}
@@ -559,6 +644,18 @@ export default function CalendarView() {
           onSave={(updates) => {
             updateTask(editingTask.id, updates);
             setEditingId(null);
+          }}
+        />
+      )}
+
+      {editingTemplate && (
+        <TemplateEditModal
+          template={editingTemplate}
+          tags={tags}
+          onClose={() => setEditingTemplateId(null)}
+          onSave={(updates) => {
+            updateTemplate(editingTemplate.id, updates);
+            setEditingTemplateId(null);
           }}
         />
       )}

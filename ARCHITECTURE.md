@@ -61,6 +61,8 @@ interface Task {
   startDate?: string | null; // ISO yyyy-mm-dd — task isn't active/shown by default before this
   dueDate?: string | null;   // ISO yyyy-mm-dd — should be done by this date, ideally before
   tags: string[];            // Tag ids
+  templateId: string | null; // set when this is a recurring template's current "anchor"
+                              // occurrence — see §7 "Recurring templates on the Calendar"
   createdAt: number;
   completedAt: number | null; // set when `done` flips true, cleared when un-done;
                                // drives the 30-day auto-purge of completed tasks
@@ -82,7 +84,6 @@ interface Template {
     | { type: "daily" }
     | { type: "weekly"; days: number[] }   // 0=Mon..6=Sun
     | { type: "monthly"; day: number };    // day-of-month, clamped to month length
-  lastRun: string | null;    // ISO date, drives next-due calculation
 }
 
 interface Countdown {
@@ -134,8 +135,8 @@ each app owns its own internal navigation and is otherwise independent.
 | Tasks | tasks, tags | tasks | list, sort by added/priority/tag, tag filter bar |
 | Countdowns | countdowns | countdowns | yearly recurrence, `[042]`-style counter |
 | Matrix | tasks | tasks | 2×2 lens over the *same* task store — not separate data |
-| Calendar | tasks | tasks | list (infinite scroll, forward-only)/week/month toggle |
-| Templates | templates, tags | tasks (on run), templates | single-task presets, optional recurrence |
+| Calendar | tasks, templates, tags | tasks | list (infinite scroll, forward-only)/week/month toggle; also projects recurring templates' future occurrences (virtual, unpersisted) — see §7 |
+| Templates | templates, tasks, tags | tasks (on run, and the recurring anchor lifecycle), templates | single-task presets, optional recurrence |
 | Tags | tags | tags | CRUD, 8-color curated palette |
 | Hours | worklog, weektargets | worklog, weektargets | per-week configurable target |
 
@@ -173,9 +174,28 @@ These came up in the process and were deliberately deferred — listed here so t
   API (Android `CalendarContract`, iOS EventKit). Would require moving off pure PWA (e.g.
   Capacitor + a calendar plugin), which conflicts with §1's PWA-only stance. If revisited without
   going native, `.ics` import/export is the lightweight fallback — not started.
-- **Recurring template auto-instantiation**: browsers can't reliably run JS in the background
-  while the PWA is closed. Realistic pattern is "check for overdue recurring templates on app
-  open," not silent background creation — the UX copy/promise should match this.
+- **Recurring templates on the Calendar (implemented)**: a recurring template has exactly one
+  open, real "anchor" `Task` at a time, linked via `Task.templateId`. It's instantiated when the
+  template is created (or recurring is switched on) and re-instantiated the moment the anchor is
+  *completed* — stepped forward from the anchor's own planned `dueDate` (`advanceOnce` in
+  `src/lib/recurrence.js`), not from today's date, so completing an occurrence early never skips
+  ahead in the schedule. This sidesteps the "browsers can't run JS in the background" problem
+  entirely — there's no scheduler to run, just a completion-triggered handoff, wired once in
+  `useTasks.toggleTask` so it applies no matter which view (Tasks/Matrix/Calendar) completes it.
+  `useTemplates` self-heals on every load: any recurring template missing an open anchor (a new
+  template, `recurring` just switched on, or the anchor deleted directly) gets one created dated
+  today. The Calendar additionally projects further **virtual** occurrences beyond the anchor —
+  computed on demand for whichever date range is on screen (`occurrencesInRange`), never
+  persisted. Tapping a virtual occurrence opens `TemplateEditModal` (editing the series, not one
+  occurrence) rather than a task; virtual occurrences have no checkbox and can't be completed,
+  since they aren't real tasks yet. Distinguished visually from real occurrences with a dashed
+  left border + a repeat icon (list/week rows) or a hollow vs. filled dot (month grid).
+  - **Note on `setState` updaters**: `toggleTask` and `updateTemplate` compute the updated
+    record from the hook's own state (not the `prev` passed into the `setTasks`/`setTemplates`
+    updater) before calling `putTask`/`spawnNextOccurrence`/`ensureAnchor`. React may invoke an
+    updater function more than once per call (e.g. Strict Mode in dev); `putTask` is idempotent
+    either way, but `spawnNextOccurrence` mints a new task id, so running it twice would double
+    up the next occurrence.
 - **Templates vs. routines/checklists**: templates were simplified to single-task presets.
   The earlier "bundle of N tasks run together" concept is a distinct, deferred feature —
   needs a name (routines? checklists? playbooks?) and its own view if built.
@@ -212,10 +232,10 @@ These came up in the process and were deliberately deferred — listed here so t
   - **Still open**: due dates come in soft (self-imposed, "finish by Friday") and hard
     (external deadline) flavors — needs a way to mark which, e.g. `dueDateStrict: boolean`. Not
     designed further, not implemented.
-  - **Still open**: recurring templates don't yet generate `startDate`/`dueDate` on the tasks
-    they instantiate (see "Recurring template auto-instantiation" above) — an optional
-    due-offset on the template (e.g. "+3 days") would cover cases like a weekly timesheet
-    (instantiated Monday, due Friday).
+  - **Resolved**: recurring templates now generate a `dueDate` on the anchor task they
+    instantiate (see "Recurring templates on the Calendar" above) — always the occurrence's own
+    scheduled date, no `startDate`. **Still open**: an optional due-offset on the template (e.g.
+    "+3 days") would cover cases like a weekly timesheet (instantiated Monday, due Friday).
 
 ## 8. Suggested build order for Claude Code
 

@@ -14,7 +14,7 @@ import { TemplateEditModal } from "../components/TemplateEditModal.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { startOfToday, parseISODate, daysBetween } from "../lib/dateUtils.js";
-import { DAY_LABELS, nextDueDate, describeRecurrence } from "../lib/recurrence.js";
+import { DAY_LABELS, describeRecurrence } from "../lib/recurrence.js";
 
 const FREQ_OPTIONS = [
   { key: "daily", label: "daily" },
@@ -44,16 +44,14 @@ function CounterBadge({ days }) {
   );
 }
 
-function TemplateRow({ template, today, tagById, onRun, onDelete, onEdit }) {
+function TemplateRow({ template, today, anchorDueDate, tagById, onRun, onDelete, onEdit }) {
   const q = QUADRANTS[quadrantFor(template.urgent, template.important)];
   const isRecurring = !!template.recurring;
-  const lastRun = template.lastRun ? parseISODate(template.lastRun) : null;
-  const due = isRecurring ? nextDueDate(template.recurring, lastRun, today) : null;
-  const daysUntil = isRecurring ? daysBetween(today, due) : null;
+  const daysUntil = anchorDueDate ? daysBetween(today, parseISODate(anchorDueDate)) : null;
 
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "14px 16px 14px 16px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${q.color}` }}>
-      {isRecurring && <CounterBadge days={daysUntil} />}
+      {isRecurring && daysUntil !== null && <CounterBadge days={daysUntil} />}
       <div onClick={() => onEdit(template.id)} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
         <div style={{ fontSize: "14.5px", color: COLORS.text, lineHeight: "1.4", wordBreak: "break-word" }}>{template.text}</div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
@@ -65,27 +63,29 @@ function TemplateRow({ template, today, tagById, onRun, onDelete, onEdit }) {
           })}
         </div>
       </div>
-      <button
-        onClick={() => onRun(template)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "5px",
-          background: COLORS.amber,
-          border: "none",
-          color: COLORS.bg,
-          fontFamily: "'IBM Plex Mono', monospace",
-          fontSize: "11.5px",
-          fontWeight: 600,
-          padding: "7px 11px",
-          borderRadius: "6px",
-          cursor: "pointer",
-          flexShrink: 0,
-        }}
-      >
-        <Play size={11} fill={COLORS.bg} />
-        run
-      </button>
+      {!isRecurring && (
+        <button
+          onClick={() => onRun(template)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            background: COLORS.amber,
+            border: "none",
+            color: COLORS.bg,
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: "11.5px",
+            fontWeight: 600,
+            padding: "7px 11px",
+            borderRadius: "6px",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <Play size={11} fill={COLORS.bg} />
+          run
+        </button>
+      )}
       <span onClick={() => onDelete(template.id)} style={{ cursor: "pointer", flexShrink: 0, paddingTop: "4px" }}>
         <X size={13} color={COLORS.dim} />
       </span>
@@ -97,8 +97,8 @@ function TemplateRow({ template, today, tagById, onRun, onDelete, onEdit }) {
 // ARCHITECTURE.md §5 ("writes: tasks (on run), templates").
 export default function TemplatesView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { addTask } = useTasks();
-  const { templates, loading: templatesLoading, addTemplate, removeTemplate, updateTemplate, markRunToday } = useTemplates();
+  const { tasks, addTask } = useTasks();
+  const { templates, loading: templatesLoading, addTemplate, removeTemplate, updateTemplate } = useTemplates();
   const [runLog, setRunLog] = useState([]);
   const [building, setBuilding] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -122,12 +122,15 @@ export default function TemplatesView() {
 
   const tagById = (id) => tags.find((t) => t.id === id);
   const editingTemplate = editingId ? templates.find((t) => t.id === editingId) : null;
+  // Recurring templates always have exactly one open "anchor" task (see
+  // ARCHITECTURE.md §7) instantiated and advanced automatically — its
+  // dueDate drives the counter badge below.
+  const anchorDueDate = (templateId) => tasks.find((t) => t.templateId === templateId && !t.done)?.dueDate || null;
 
   const runTemplate = (template) => {
     const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
     addTask({ text: template.text, urgent: template.urgent, important: template.important, tags: template.tags });
     setRunLog((prev) => [{ id: crypto.randomUUID(), text: template.text, time }, ...prev].slice(0, 5));
-    if (template.recurring) markRunToday(template.id);
   };
 
   const toggleWeekDay = (d) => {
@@ -252,12 +255,12 @@ export default function TemplatesView() {
                     {group.tag ? group.tag.name : "untagged"}
                   </div>
                   {group.items.map((t) => (
-                    <TemplateRow key={t.id} template={t} today={today} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+                    <TemplateRow key={t.id} template={t} today={today} anchorDueDate={anchorDueDate(t.id)} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
                   ))}
                 </div>
               ))
             : filtered.map((t) => (
-                <TemplateRow key={t.id} template={t} today={today} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+                <TemplateRow key={t.id} template={t} today={today} anchorDueDate={anchorDueDate(t.id)} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
               ))}
 
           {!dataLoading && templates.length === 0 && !building && (

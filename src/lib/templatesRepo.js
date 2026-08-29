@@ -5,6 +5,11 @@ export async function listTemplates() {
   return db.getAll("templates");
 }
 
+export async function getTemplate(id) {
+  const db = await getDB();
+  return db.get("templates", id);
+}
+
 export async function putTemplate(template) {
   const db = await getDB();
   await db.put("templates", template);
