@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { listTasks, putTask, deleteTask } from "../lib/tasksRepo.js";
 import { getTemplate } from "../lib/templatesRepo.js";
-import { advanceOnce } from "../lib/recurrence.js";
-import { toISO, parseISODate } from "../lib/dateUtils.js";
+import { advanceOnce, occurrenceDates } from "../lib/recurrence.js";
+import { parseISODate } from "../lib/dateUtils.js";
 
 // Completed tasks older than this are purged automatically on load — there's
 // no settings view yet to make this configurable (see ARCHITECTURE.md §7).
@@ -29,14 +29,18 @@ export function useTasks() {
     };
   }, []);
 
-  // Completing a task linked to a recurring template (its "anchor" — see
-  // ARCHITECTURE.md §7) instantiates the next occurrence, stepped forward
-  // from the anchor's own planned dueDate rather than today's date, so
-  // completing early never skips ahead in the schedule.
+  // Completing (or deleting/"skipping" — see removeTask) a task linked to a
+  // recurring template (its "anchor" — see ARCHITECTURE.md §7) instantiates
+  // the next occurrence, stepped forward from the anchor's own planned date
+  // rather than today's date, so resolving an occurrence early never skips
+  // ahead in the schedule. Anchors may carry a startDate, a dueDate, or
+  // both (per the template's recurring.dateField); dueDate is preferred as
+  // the anchor date when both are present since it's the deadline.
   const spawnNextOccurrence = async (anchorTask) => {
     const template = await getTemplate(anchorTask.templateId);
-    if (!template?.recurring || !anchorTask.dueDate) return;
-    const nextDate = advanceOnce(template.recurring, parseISODate(anchorTask.dueDate));
+    const anchorDateISO = anchorTask.dueDate || anchorTask.startDate;
+    if (!template?.recurring || !anchorDateISO) return;
+    const nextDate = advanceOnce(template.recurring, parseISODate(anchorDateISO));
     const nextTask = {
       id: crypto.randomUUID(),
       text: template.text,
@@ -44,8 +48,7 @@ export function useTasks() {
       urgent: template.urgent,
       important: template.important,
       tags: template.tags,
-      startDate: null,
-      dueDate: toISO(nextDate),
+      ...occurrenceDates(template, nextDate),
       templateId: template.id,
       createdAt: Date.now(),
       completedAt: null,
@@ -86,9 +89,18 @@ export function useTasks() {
     putTask(task);
   };
 
+  // Deleting a recurring template's open anchor is treated as "skip this
+  // occurrence" rather than ending the series: the next occurrence is
+  // instantiated immediately (same handoff as completing it — see
+  // spawnNextOccurrence), so the series keeps going instead of vanishing
+  // from the Calendar until the next self-healing check on load. Reads
+  // `tasks` (this hook's own state, not the setTasks updater's `prev`) for
+  // the same reason toggleTask does — see the note in ARCHITECTURE.md §7.
   const removeTask = (id) => {
+    const current = tasks.find((t) => t.id === id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
     deleteTask(id);
+    if (current && !current.done && current.templateId) spawnNextOccurrence(current);
   };
 
   const updateTask = (id, updates) => {

@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
 import { listTemplates, putTemplate, deleteTemplate } from "../lib/templatesRepo.js";
 import { listTasks, putTask } from "../lib/tasksRepo.js";
-import { toISO, startOfToday } from "../lib/dateUtils.js";
+import { startOfToday } from "../lib/dateUtils.js";
+import { firstOccurrenceOnOrAfter, occurrenceDates } from "../lib/recurrence.js";
 
 // Ensures a recurring template has exactly one open "anchor" task (the one
 // real, completable Task linked via templateId — see ARCHITECTURE.md §7).
 // Called on template creation, whenever recurring is switched on, and as a
 // self-healing check on load (covers legacy templates and an anchor the
 // user deleted directly). No-op for one-off templates or templates that
-// already have an open anchor.
+// already have an open anchor. Seeded on the schedule's actual first
+// occurrence on/after today (not always today itself), dated per the
+// template's recurring.dateField.
 async function ensureAnchor(template) {
   if (!template.recurring) return;
   const existing = await listTasks();
   const hasOpenAnchor = existing.some((t) => t.templateId === template.id && !t.done);
   if (hasOpenAnchor) return;
+  const occDate = firstOccurrenceOnOrAfter(template.recurring, startOfToday());
   const anchor = {
     id: crypto.randomUUID(),
     text: template.text,
@@ -21,8 +25,7 @@ async function ensureAnchor(template) {
     urgent: template.urgent,
     important: template.important,
     tags: template.tags,
-    startDate: null,
-    dueDate: toISO(startOfToday()),
+    ...occurrenceDates(template, occDate),
     templateId: template.id,
     createdAt: Date.now(),
     completedAt: null,

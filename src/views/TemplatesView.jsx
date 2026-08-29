@@ -22,6 +22,12 @@ const FREQ_OPTIONS = [
   { key: "monthly", label: "monthly" },
 ];
 
+const DATE_FIELD_OPTIONS = [
+  { key: "due", label: "due date" },
+  { key: "start", label: "start date" },
+  { key: "both", label: "both" },
+];
+
 function CounterBadge({ days }) {
   const isDue = days <= 0;
   const padded = String(Math.min(Math.max(days, 0), 999)).padStart(3, "0");
@@ -44,10 +50,10 @@ function CounterBadge({ days }) {
   );
 }
 
-function TemplateRow({ template, today, anchorDueDate, tagById, onRun, onDelete, onEdit }) {
+function TemplateRow({ template, today, anchorDate, tagById, onRun, onDelete, onEdit }) {
   const q = QUADRANTS[quadrantFor(template.urgent, template.important)];
   const isRecurring = !!template.recurring;
-  const daysUntil = anchorDueDate ? daysBetween(today, parseISODate(anchorDueDate)) : null;
+  const daysUntil = anchorDate ? daysBetween(today, parseISODate(anchorDate)) : null;
 
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "14px 16px 14px 16px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${q.color}` }}>
@@ -109,6 +115,7 @@ export default function TemplatesView() {
   const [draftFreq, setDraftFreq] = useState("daily");
   const [draftWeekDays, setDraftWeekDays] = useState([0]);
   const [draftMonthDay, setDraftMonthDay] = useState(1);
+  const [draftDateField, setDraftDateField] = useState("due");
   const [draftTags, setDraftTags] = useState([]);
   const [filterTags, setFilterTags] = usePersistentState("manifest.templates.filterTags", []);
   const [groupByTag, setGroupByTag] = usePersistentState("manifest.templates.groupByTag", false);
@@ -125,7 +132,10 @@ export default function TemplatesView() {
   // Recurring templates always have exactly one open "anchor" task (see
   // ARCHITECTURE.md §7) instantiated and advanced automatically — its
   // dueDate drives the counter badge below.
-  const anchorDueDate = (templateId) => tasks.find((t) => t.templateId === templateId && !t.done)?.dueDate || null;
+  const anchorDate = (templateId) => {
+    const anchor = tasks.find((t) => t.templateId === templateId && !t.done);
+    return anchor?.dueDate || anchor?.startDate || null;
+  };
 
   const runTemplate = (template) => {
     const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -154,6 +164,7 @@ export default function TemplatesView() {
     setDraftFreq("daily");
     setDraftWeekDays([0]);
     setDraftMonthDay(1);
+    setDraftDateField("due");
     setDraftTags([]);
   };
 
@@ -165,6 +176,7 @@ export default function TemplatesView() {
       if (draftFreq === "daily") recurring = { type: "daily" };
       else if (draftFreq === "weekly") recurring = { type: "weekly", days: draftWeekDays.length ? draftWeekDays : [0] };
       else if (draftFreq === "monthly") recurring = { type: "monthly", day: draftMonthDay };
+      recurring.dateField = draftDateField;
     }
     addTemplate({ text: trimmed, urgent: draftUrgent, important: draftImportant, recurring, tags: draftTags });
     cancelBuild();
@@ -255,12 +267,12 @@ export default function TemplatesView() {
                     {group.tag ? group.tag.name : "untagged"}
                   </div>
                   {group.items.map((t) => (
-                    <TemplateRow key={t.id} template={t} today={today} anchorDueDate={anchorDueDate(t.id)} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+                    <TemplateRow key={t.id} template={t} today={today} anchorDate={anchorDate(t.id)} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
                   ))}
                 </div>
               ))
             : filtered.map((t) => (
-                <TemplateRow key={t.id} template={t} today={today} anchorDueDate={anchorDueDate(t.id)} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+                <TemplateRow key={t.id} template={t} today={today} anchorDate={anchorDate(t.id)} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
               ))}
 
           {!dataLoading && templates.length === 0 && !building && (
@@ -380,6 +392,11 @@ export default function TemplatesView() {
                     />
                   </div>
                 )}
+
+                <div style={{ marginTop: "10px" }}>
+                  <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>schedule sets</div>
+                  <Segmented value={draftDateField} onChange={setDraftDateField} options={DATE_FIELD_OPTIONS} />
+                </div>
               </div>
             )}
 
