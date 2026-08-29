@@ -1,4 +1,4 @@
-import { ListChecks, Hourglass, Clock, ChevronRight } from "lucide-react";
+import { ListChecks, Hourglass, Clock, Flame, ChevronRight } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 
@@ -12,6 +12,7 @@ const APPS = [
   },
   { key: "countdowns", label: "countdowns", path: "~/countdowns", icon: Hourglass, desc: "days until" },
   { key: "hours", label: "hours", path: "~/hours", icon: Clock, desc: "work log" },
+  { key: "habits", label: "habits", path: "~/habits", icon: Flame, desc: "streaks · frequency" },
 ];
 
 export default function LauncherView({ onOpen }) {

@@ -4,12 +4,14 @@ import LauncherView from "./views/LauncherView.jsx";
 import TaskManagerApp from "./apps/TaskManagerApp.jsx";
 import CountdownsApp from "./apps/CountdownsApp.jsx";
 import HoursApp from "./apps/HoursApp.jsx";
+import HabitsApp from "./apps/HabitsApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
 const APPS = {
   taskmanager: TaskManagerApp,
   countdowns: CountdownsApp,
   hours: HoursApp,
+  habits: HabitsApp,
 };
 
 // Home screen launches into one of three apps; each app owns its own

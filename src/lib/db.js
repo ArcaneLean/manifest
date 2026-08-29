@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise = null;
 
@@ -27,6 +27,12 @@ export function getDB() {
         ensureStore(db, "countdowns", { keyPath: "id" });
         ensureStore(db, "worklog", { keyPath: "date" });
         ensureStore(db, "weektargets", { keyPath: "weekStartISO" });
+        // Habits app — see ARCHITECTURE.md §5. `habits` holds the tracked
+        // habit itself (name, positive/negative); `habitEntries` is the
+        // event log (one row per time it was done), which both "last done"
+        // and the contribution heatmap are derived from at render time.
+        ensureStore(db, "habits", { keyPath: "id" });
+        ensureStore(db, "habitEntries", { keyPath: "id" });
         // Google Calendar read-only sync cache — see ARCHITECTURE.md §7
         // ("Google Calendar integration"). v3: now caches every calendar on
         // the account, not just the primary one, so events are keyed by
