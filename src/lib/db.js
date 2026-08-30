@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 let dbPromise = null;
 
@@ -46,11 +46,18 @@ export function getDB() {
         db.createObjectStore("gcalEvents", { keyPath: "key" });
         db.createObjectStore("gcalMeta", { keyPath: "calendarId" });
         // Day Planner app — see ARCHITECTURE.md §7 ("Day Planner"). A
-        // DayShape is a named set of fixed time blocks (commute, work,
-        // routines); `dayoverrides` holds at most one row per date, only
-        // when that date's shape differs from its weekday default.
+        // DayShape is a named set of blocks (commute, work, routines);
+        // `dayoverrides` holds at most one row per date, only when that
+        // date needs something different from its weekday default (a
+        // different DayShape, a one-off wake time, and/or ad hoc extra
+        // blocks just for that date).
         ensureStore(db, "dayshapes", { keyPath: "id" });
         ensureStore(db, "dayoverrides", { keyPath: "date" });
+        // v6: habits/tasks are no longer auto-included in a day's plan —
+        // `dayplans` holds the explicit opt-in list per date (habitIds,
+        // taskIds), decoupled from Task.startDate/dueDate so planning a
+        // task for a day never mutates the task itself.
+        ensureStore(db, "dayplans", { keyPath: "date" });
       },
     });
   }

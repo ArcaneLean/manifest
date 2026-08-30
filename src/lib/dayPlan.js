@@ -1,9 +1,10 @@
 import { QUADRANTS, quadrantFor } from "./quadrant.js";
 import { toISO } from "./dateUtils.js";
 
-// No settings view yet to make this configurable (see ARCHITECTURE.md §7,
-// same posture as WeekTarget defaulting to 40h) — a fixed waking window
-// stands in for a per-user wake/sleep setting.
+// Default wake time, used when a DayShape/override doesn't set its own (see
+// ARCHITECTURE.md §7). Sleep end of the planning window has no equivalent
+// per-day setting yet — no settings view exists to make it configurable
+// (same posture as WeekTarget defaulting to 40h) — so it stays a constant.
 export const DAY_START_MIN = 6 * 60 + 30; // 06:30
 export const DAY_END_MIN = 23 * 60; // 23:00
 
@@ -68,8 +69,37 @@ export function isHabitLoggedOnDate(entries, habitId, dayStartMs, dayEndMs) {
   return entries.some((e) => e.habitId === habitId && e.ts >= dayStartMs && e.ts < dayEndMs);
 }
 
-// Builds a day's plan from a DayShape's fixed blocks plus the habits/tasks
-// that still need doing: fixed blocks carve out the day, what's left is
+// A block is either `anchor: "fixed"` (a specific clock time, via
+// `startMinutes`) or `anchor: "chained"` (starts right where the previous
+// block in the list ends — or at the day's wake time, if it's first). This
+// lets a sequence like wake -> morning routine -> commute all shift
+// together when wake time changes, while something like dinner can still
+// be pinned to a fixed clock time regardless of how the day before it ran.
+// Legacy blocks (created before `anchor` existed) have `startMinutes` set
+// and no `anchor` field — treated as "fixed", their original behavior.
+//
+// Resolution walks the list in array order (the order blocks are defined
+// in — see DayShapeEditModal's reorder controls), since a chained block's
+// start depends on *the previous block in that order*, not on time. A
+// fixed block that starts before the running cursor (e.g. the prior block
+// overran) doesn't push time backwards for what follows.
+export function resolveBlocks(wakeMinutes, blockDefs) {
+  let cursor = wakeMinutes;
+  const resolved = [];
+  for (const b of blockDefs) {
+    const anchor = b.anchor === "chained" ? "chained" : "fixed";
+    const startMin = anchor === "fixed" && b.startMinutes != null ? b.startMinutes : cursor;
+    const endMin = startMin + b.durationMinutes;
+    resolved.push({ id: b.id, label: b.label, anchor, startMin, endMin });
+    cursor = Math.max(cursor, endMin);
+  }
+  return resolved;
+}
+
+// Builds a day's plan from a DayShape's blocks (resolved against the day's
+// wake time — see `resolveBlocks`) plus whichever habits/tasks have been
+// explicitly planned for the day (see useDayPlanItems — nothing is
+// auto-included anymore): blocks carve out the day, what's left is
 // "discretionary" time that habits (first — quick, routine-anchored) and
 // tasks (by quadrant priority) are greedily packed into. Whatever doesn't
 // fit is reported as overflow rather than silently dropped.
@@ -78,22 +108,17 @@ export function isHabitLoggedOnDate(entries, habitId, dayStartMs, dayEndMs) {
 // unpersisted override that forces an overflow item onto the plan anyway
 // (see the Today view's "squeeze in" action), on top of the normal fill
 // rather than competing with it for space.
-export function buildDayPlan({ dayShape, tasks, habits, squeezeIds = new Set() }) {
-  const fixed = (dayShape?.blocks || [])
-    .map((b) => ({
-      kind: "fixed",
-      label: b.label,
-      startMin: b.startMinutes,
-      endMin: b.startMinutes + b.durationMinutes,
-    }))
-    .filter((b) => b.endMin > DAY_START_MIN && b.startMin < DAY_END_MIN)
+export function buildDayPlan({ wakeMinutes = DAY_START_MIN, blocks = [], tasks, habits, squeezeIds = new Set() }) {
+  const fixed = resolveBlocks(wakeMinutes, blocks)
+    .map((b) => ({ kind: "fixed", label: b.label, anchor: b.anchor, startMin: b.startMin, endMin: b.endMin }))
+    .filter((b) => b.endMin > wakeMinutes && b.startMin < DAY_END_MIN)
     .sort((a, b) => a.startMin - b.startMin);
 
   // Free gaps: the complement of `fixed` blocks within the waking window.
   const gaps = [];
-  let cursor = DAY_START_MIN;
+  let cursor = wakeMinutes;
   for (const block of fixed) {
-    const start = Math.max(block.startMin, DAY_START_MIN);
+    const start = Math.max(block.startMin, wakeMinutes);
     if (start > cursor) gaps.push({ startMin: cursor, endMin: start });
     cursor = Math.max(cursor, Math.min(block.endMin, DAY_END_MIN));
   }
@@ -149,7 +174,7 @@ export function buildDayPlan({ dayShape, tasks, habits, squeezeIds = new Set() }
   // finding real spare capacity that doesn't exist.
   for (const item of forcedItems) {
     const gap = mutableGaps.find((g) => g.endMin > g.startMin) || mutableGaps[mutableGaps.length - 1];
-    const startMin = gap ? gap.startMin : DAY_START_MIN;
+    const startMin = gap ? gap.startMin : wakeMinutes;
     scheduled.push({ ...item, startMin, endMin: startMin + item.durationMin, squeezed: true });
     if (gap) gap.startMin += item.durationMin;
   }

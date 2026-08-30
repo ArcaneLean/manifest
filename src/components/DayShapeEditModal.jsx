@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { DAY_LABELS } from "../lib/recurrence.js";
-import { minutesToClock } from "../lib/dayPlan.js";
+import { minutesToClock, resolveBlocks, DAY_START_MIN } from "../lib/dayPlan.js";
 
 function timeToMin(hhmm) {
   if (!hhmm) return 0;
@@ -48,12 +48,26 @@ export function DayShapeEditModal({ dayShapes, onAdd, onUpdate, onRemove, onClos
   };
 
   const addBlock = () => {
-    onUpdate(selected.id, { blocks: [...selected.blocks, { label: "", startMinutes: 9 * 60, durationMinutes: 30 }] });
+    onUpdate(selected.id, { blocks: [...selected.blocks, { id: crypto.randomUUID(), label: "", anchor: "fixed", startMinutes: 9 * 60, durationMinutes: 30 }] });
   };
 
   const removeBlock = (index) => {
     onUpdate(selected.id, { blocks: selected.blocks.filter((_, i) => i !== index) });
   };
+
+  // Chained blocks resolve their start time from array order (see
+  // resolveBlocks in dayPlan.js), so reordering is a real control here, not
+  // just cosmetic.
+  const moveBlock = (index, dir) => {
+    const target = index + dir;
+    if (target < 0 || target >= selected.blocks.length) return;
+    const blocks = [...selected.blocks];
+    [blocks[index], blocks[target]] = [blocks[target], blocks[index]];
+    onUpdate(selected.id, { blocks });
+  };
+
+  const wakeMinutes = selected?.wakeMinutes ?? DAY_START_MIN;
+  const resolvedBlocks = selected ? resolveBlocks(wakeMinutes, selected.blocks) : [];
 
   const removeShape = () => {
     const remaining = dayShapes.filter((s) => s.id !== selected.id);
@@ -158,6 +172,14 @@ export function DayShapeEditModal({ dayShapes, onAdd, onUpdate, onRemove, onClos
               }}
             />
 
+            <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>wakes at</div>
+            <input
+              type="time"
+              value={minutesToClock(wakeMinutes)}
+              onChange={(e) => onUpdate(selected.id, { wakeMinutes: timeToMin(e.target.value) })}
+              style={{ ...fieldStyle, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "6px 8px", fontSize: "12px", marginBottom: "16px" }}
+            />
+
             <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>default days</div>
             <div style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
               {DAY_LABELS.map((label, i) => {
@@ -185,34 +207,81 @@ export function DayShapeEditModal({ dayShapes, onAdd, onUpdate, onRemove, onClos
               })}
             </div>
 
-            <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>fixed blocks</div>
-            {selected.blocks.map((b, i) => (
-              <div key={i} style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "8px" }}>
-                <input
-                  value={b.label}
-                  onChange={(e) => updateBlock(i, { label: e.target.value })}
-                  placeholder="label"
-                  style={{ ...fieldStyle, flex: 1, minWidth: 0, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "6px 8px", fontSize: "12px" }}
-                />
-                <input
-                  type="time"
-                  value={minutesToClock(b.startMinutes)}
-                  onChange={(e) => updateBlock(i, { startMinutes: timeToMin(e.target.value) })}
-                  style={{ ...fieldStyle, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "6px 4px", fontSize: "11.5px", width: "100px", flexShrink: 0 }}
-                />
-                <input
-                  type="number"
-                  min={5}
-                  step={5}
-                  value={b.durationMinutes}
-                  onChange={(e) => updateBlock(i, { durationMinutes: Math.max(5, Number(e.target.value) || 5) })}
-                  style={{ ...fieldStyle, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "6px 4px", fontSize: "12px", width: "46px", flexShrink: 0 }}
-                />
-                <span onClick={() => removeBlock(i)} style={{ cursor: "pointer", flexShrink: 0 }}>
-                  <X size={13} color={COLORS.dim} />
-                </span>
-              </div>
-            ))}
+            <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>blocks</div>
+            {selected.blocks.map((b, i) => {
+              const isChained = b.anchor === "chained";
+              return (
+                <div key={b.id ?? i} style={{ border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "8px", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "6px" }}>
+                    <input
+                      value={b.label}
+                      onChange={(e) => updateBlock(i, { label: e.target.value })}
+                      placeholder="label"
+                      style={{ ...fieldStyle, flex: 1, minWidth: 0, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "6px 8px", fontSize: "12px" }}
+                    />
+                    <input
+                      type="number"
+                      min={5}
+                      step={5}
+                      value={b.durationMinutes}
+                      onChange={(e) => updateBlock(i, { durationMinutes: Math.max(5, Number(e.target.value) || 5) })}
+                      style={{ ...fieldStyle, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "6px 4px", fontSize: "12px", width: "46px", flexShrink: 0 }}
+                    />
+                    <span style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+                      <span onClick={() => moveBlock(i, -1)} style={{ cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1 }}>
+                        <ChevronUp size={12} color={COLORS.dim} />
+                      </span>
+                      <span onClick={() => moveBlock(i, 1)} style={{ cursor: i === selected.blocks.length - 1 ? "default" : "pointer", opacity: i === selected.blocks.length - 1 ? 0.3 : 1 }}>
+                        <ChevronDown size={12} color={COLORS.dim} />
+                      </span>
+                    </span>
+                    <span onClick={() => removeBlock(i)} style={{ cursor: "pointer", flexShrink: 0 }}>
+                      <X size={13} color={COLORS.dim} />
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    <span
+                      onClick={() => updateBlock(i, { anchor: "fixed" })}
+                      style={{
+                        fontSize: "9.5px",
+                        padding: "3px 8px",
+                        borderRadius: "5px",
+                        border: `1px solid ${!isChained ? COLORS.amber : COLORS.border}`,
+                        color: !isChained ? COLORS.amber : COLORS.dim,
+                        cursor: "pointer",
+                      }}
+                    >
+                      fixed time
+                    </span>
+                    <span
+                      onClick={() => updateBlock(i, { anchor: "chained" })}
+                      style={{
+                        fontSize: "9.5px",
+                        padding: "3px 8px",
+                        borderRadius: "5px",
+                        border: `1px solid ${isChained ? COLORS.amber : COLORS.border}`,
+                        color: isChained ? COLORS.amber : COLORS.dim,
+                        cursor: "pointer",
+                      }}
+                    >
+                      after previous
+                    </span>
+                    {!isChained ? (
+                      <input
+                        type="time"
+                        value={minutesToClock(b.startMinutes ?? 9 * 60)}
+                        onChange={(e) => updateBlock(i, { startMinutes: timeToMin(e.target.value) })}
+                        style={{ ...fieldStyle, border: `1px solid ${COLORS.border}`, borderRadius: "5px", padding: "5px 6px", fontSize: "11.5px", marginLeft: "auto" }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: "10.5px", color: COLORS.dim, marginLeft: "auto" }}>
+                        starts ~{minutesToClock(resolvedBlocks[i]?.startMin ?? wakeMinutes)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             <button
               onClick={addBlock}
               style={{
