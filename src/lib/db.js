@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let dbPromise = null;
 
@@ -45,6 +45,12 @@ export function getDB() {
         if (db.objectStoreNames.contains("gcalMeta")) db.deleteObjectStore("gcalMeta");
         db.createObjectStore("gcalEvents", { keyPath: "key" });
         db.createObjectStore("gcalMeta", { keyPath: "calendarId" });
+        // Today app — see ARCHITECTURE.md §7 ("Today / day planner"). A
+        // DayShape is a named set of fixed time blocks (commute, work,
+        // routines); `dayoverrides` holds at most one row per date, only
+        // when that date's shape differs from its weekday default.
+        ensureStore(db, "dayshapes", { keyPath: "id" });
+        ensureStore(db, "dayoverrides", { keyPath: "date" });
       },
     });
   }

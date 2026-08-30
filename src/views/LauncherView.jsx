@@ -1,8 +1,9 @@
-import { ListChecks, Hourglass, Clock, Flame, ChevronRight } from "lucide-react";
+import { CalendarCheck2, ListChecks, Hourglass, Clock, Flame, ChevronRight } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 
 const APPS = [
+  { key: "today", label: "today", path: "~/today", icon: CalendarCheck2, desc: "day plan · time left" },
   {
     key: "taskmanager",
     label: "task manager",

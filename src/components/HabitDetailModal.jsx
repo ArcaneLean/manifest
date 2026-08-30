@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Flame, Trash2 } from "lucide-react";
+import { X, Flame, Trash2, Clock } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { Toggle } from "./Toggle.jsx";
 import { HabitHeatmap } from "./HabitHeatmap.jsx";
@@ -32,6 +32,7 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
   const [name, setName] = useState(habit.name);
   const [backfillDate, setBackfillDate] = useState("");
   const [backfillTime, setBackfillTime] = useState("");
+  const [estimatedMinutes, setEstimatedMinutes] = useState(habit.estimatedMinutes ?? "");
 
   const timestamps = entries.map((e) => e.ts);
   const stats = habitStats(timestamps, now);
@@ -43,6 +44,11 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
     const trimmed = name.trim();
     if (trimmed && trimmed !== habit.name) onRename({ name: trimmed });
     else if (!trimmed) setName(habit.name);
+  };
+
+  const commitEstimate = () => {
+    const v = estimatedMinutes === "" ? null : Math.max(0, Number(estimatedMinutes) || 0);
+    if (v !== (habit.estimatedMinutes ?? null)) onRename({ estimatedMinutes: v });
   };
 
   const commitBackfill = () => {
@@ -111,6 +117,36 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
             rightLabel="negative"
           />
         </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: "6px",
+            padding: "0 8px",
+            marginBottom: "16px",
+            width: "140px",
+          }}
+        >
+          <Clock size={12} color={COLORS.dim} />
+          <input
+            type="number"
+            min={0}
+            step={5}
+            placeholder="estimate"
+            value={estimatedMinutes}
+            onChange={(e) => setEstimatedMinutes(e.target.value === "" ? "" : Math.max(0, Number(e.target.value) || 0))}
+            onBlur={commitEstimate}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            style={{ ...fieldStyle, fontSize: "12px", flex: 1, minWidth: 0, padding: "6px 0" }}
+          />
+          <span style={{ fontSize: "10.5px", color: COLORS.dim, flexShrink: 0 }}>min</span>
+        </div>
+        <div style={{ fontSize: "10px", color: COLORS.dim, marginTop: "-10px", marginBottom: "16px" }}>for today's plan, if tracked</div>
 
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
           <StatTile label="last" value={formatRelativeTime(stats.lastTs, now)} />

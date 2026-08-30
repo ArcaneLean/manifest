@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Hourglass, Flag, X } from "lucide-react";
+import { Hourglass, Flag, Clock, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { Toggle } from "./Toggle.jsx";
 import { TagPickerChip } from "./TagChip.jsx";
@@ -14,6 +14,7 @@ export function TaskEditModal({ task, tags, onSave, onClose }) {
   const [taskTags, setTaskTags] = useState(task.tags);
   const [startDate, setStartDate] = useState(task.startDate || "");
   const [dueDate, setDueDate] = useState(task.dueDate || "");
+  const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimatedMinutes ?? "");
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function TaskEditModal({ task, tags, onSave, onClose }) {
       tags: taskTags,
       startDate: startDate || null,
       dueDate: dueDate || null,
+      estimatedMinutes: estimatedMinutes === "" ? null : Math.max(0, Number(estimatedMinutes) || 0),
     });
   };
 
@@ -167,6 +169,41 @@ export function TaskEditModal({ task, tags, onSave, onClose }) {
               }}
             />
           </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: "6px",
+            padding: "0 8px",
+            marginBottom: "12px",
+            width: "140px",
+          }}
+        >
+          <Clock size={12} color={COLORS.dim} />
+          <input
+            type="number"
+            min={0}
+            step={5}
+            placeholder="estimate"
+            value={estimatedMinutes}
+            onChange={(e) => setEstimatedMinutes(e.target.value === "" ? "" : Math.max(0, Number(e.target.value) || 0))}
+            style={{
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              color: COLORS.text,
+              caretColor: COLORS.amber,
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: "12px",
+              flex: 1,
+              minWidth: 0,
+              padding: "6px 0",
+            }}
+          />
+          <span style={{ fontSize: "10.5px", color: COLORS.dim, flexShrink: 0 }}>min</span>
         </div>
         {tags.length > 0 && (
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "16px" }}>
