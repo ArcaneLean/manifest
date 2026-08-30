@@ -45,7 +45,7 @@ export function getDB() {
         if (db.objectStoreNames.contains("gcalMeta")) db.deleteObjectStore("gcalMeta");
         db.createObjectStore("gcalEvents", { keyPath: "key" });
         db.createObjectStore("gcalMeta", { keyPath: "calendarId" });
-        // Today app — see ARCHITECTURE.md §7 ("Today / day planner"). A
+        // Day Planner app — see ARCHITECTURE.md §7 ("Day Planner"). A
         // DayShape is a named set of fixed time blocks (commute, work,
         // routines); `dayoverrides` holds at most one row per date, only
         // when that date's shape differs from its weekday default.

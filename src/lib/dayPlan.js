@@ -27,7 +27,7 @@ export function nowMinutes(date = new Date()) {
 }
 
 // Read-only Google Calendar events (see ARCHITECTURE.md §7) as informational
-// markers on the Today timeline — shown for visibility, never subtracted
+// markers on the Day Planner timeline — shown for visibility, never subtracted
 // from the discretionary-time budget (they typically overlap a fixed work
 // block already; double-subtracting would be wrong). Multi-day timed events
 // are a known v1 gap — only an event whose local start day is `dateISO` is
@@ -52,23 +52,23 @@ export function gcalBlockForDate(event, dateISO) {
   };
 }
 
-// A task belongs on today's plan if it's overdue-or-due-today, explicitly
-// started today with no due date, or was already completed today (shown
-// checked rather than dropped) — the same actionable/dated semantics
-// Tasks/Matrix already use (see taskDates.js's isScheduled), just narrowed
-// from "actionable at all" to "actionable today specifically".
-export function isTaskForToday(task, todayISO, dayStartMs, dayEndMs) {
+// A task belongs on a given day's plan if it's overdue-or-due-by that date,
+// explicitly started that day with no due date, or was already completed
+// that day (shown checked rather than dropped) — the same actionable/dated
+// semantics Tasks/Matrix already use (see taskDates.js's isScheduled), just
+// narrowed from "actionable at all" to "actionable on this specific date".
+export function isTaskForDate(task, dateISO, dayStartMs, dayEndMs) {
   if (task.done) return task.completedAt != null && task.completedAt >= dayStartMs && task.completedAt < dayEndMs;
-  if (task.startDate && task.startDate > todayISO) return false;
-  if (task.dueDate) return task.dueDate <= todayISO;
-  return task.startDate === todayISO;
+  if (task.startDate && task.startDate > dateISO) return false;
+  if (task.dueDate) return task.dueDate <= dateISO;
+  return task.startDate === dateISO;
 }
 
-export function isHabitLoggedToday(entries, habitId, dayStartMs, dayEndMs) {
+export function isHabitLoggedOnDate(entries, habitId, dayStartMs, dayEndMs) {
   return entries.some((e) => e.habitId === habitId && e.ts >= dayStartMs && e.ts < dayEndMs);
 }
 
-// Builds today's plan from a DayShape's fixed blocks plus the habits/tasks
+// Builds a day's plan from a DayShape's fixed blocks plus the habits/tasks
 // that still need doing: fixed blocks carve out the day, what's left is
 // "discretionary" time that habits (first — quick, routine-anchored) and
 // tasks (by quadrant priority) are greedily packed into. Whatever doesn't

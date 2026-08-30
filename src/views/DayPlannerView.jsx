@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { Cog, Cloud, Flame } from "lucide-react";
+import { Cog, Cloud, Flame, ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { DayShapeEditModal } from "../components/DayShapeEditModal.jsx";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
-import { toISO, startOfToday, addDays } from "../lib/dateUtils.js";
+import { toISO, startOfToday, addDays, daysBetween } from "../lib/dateUtils.js";
 import {
   buildDayPlan,
   gcalBlockForDate,
-  isTaskForToday,
-  isHabitLoggedToday,
+  isTaskForDate,
+  isHabitLoggedOnDate,
   minutesToClock,
   formatDuration,
   nowMinutes,
@@ -62,7 +62,7 @@ function GCalRow({ block }) {
   );
 }
 
-function ItemRow({ item, onToggle }) {
+function ItemRow({ item, onToggle, interactive }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.done ? COLORS.border : item.quadrant.color;
   return (
@@ -76,7 +76,7 @@ function ItemRow({ item, onToggle }) {
         </div>
       </div>
       {isHabit && <Flame size={12} color={COLORS.sage} strokeWidth={1.75} />}
-      <span onClick={onToggle} style={{ cursor: "pointer" }}>
+      <span onClick={interactive ? onToggle : undefined} style={{ cursor: interactive ? "pointer" : "default", opacity: interactive ? 1 : 0.5 }}>
         <Checkbox done={item.done} />
       </span>
     </div>
@@ -93,7 +93,7 @@ function NowDivider({ nowMin }) {
   );
 }
 
-function OverflowRow({ item, squeezed, onSqueeze, onDefer }) {
+function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.quadrant.color;
   return (
@@ -111,7 +111,7 @@ function OverflowRow({ item, squeezed, onSqueeze, onDefer }) {
         </span>
         {!isHabit && (
           <span onClick={onDefer} style={{ fontSize: "9.5px", padding: "3px 9px", borderRadius: "5px", border: `1px solid ${COLORS.border}`, color: COLORS.dim, cursor: "pointer" }}>
-            defer → tomorrow
+            {deferLabel}
           </span>
         )}
       </div>
@@ -119,7 +119,7 @@ function OverflowRow({ item, squeezed, onSqueeze, onDefer }) {
   );
 }
 
-export default function TodayView() {
+export default function DayPlannerView() {
   const now = useClock();
   const { tasks, loading: tasksLoading, toggleTask, updateTask } = useTasks();
   const { habits, entries, loading: habitsLoading, logEntry, removeEntry } = useHabits();
@@ -127,15 +127,20 @@ export default function TodayView() {
   const gcal = useGoogleCalendar();
   const [squeezeIds, setSqueezeIds] = useState(new Set());
   const [managingShapes, setManagingShapes] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(startOfToday());
 
-  const todayISO = toISO(startOfToday());
-  const dayStartMs = startOfToday().getTime();
+  const todayDate = startOfToday();
+  const dayOffset = daysBetween(todayDate, selectedDate);
+  const isToday = dayOffset === 0;
+
+  const selectedISO = toISO(selectedDate);
+  const dayStartMs = selectedDate.getTime();
   const dayEndMs = dayStartMs + 24 * 60 * 60 * 1000;
-  const weekday = (now.getDay() + 6) % 7; // 0=Mon..6=Sun, matches recurrence.js
+  const weekday = (selectedDate.getDay() + 6) % 7; // 0=Mon..6=Sun, matches recurrence.js
 
-  const selectedShape = dayShapeForDate(todayISO, weekday);
+  const selectedShape = dayShapeForDate(selectedISO, weekday);
 
-  const tasksToday = tasks.filter((t) => isTaskForToday(t, todayISO, dayStartMs, dayEndMs));
+  const tasksForDay = tasks.filter((t) => isTaskForDate(t, selectedISO, dayStartMs, dayEndMs));
   // Habits have no due-date/frequency concept of their own (see
   // ARCHITECTURE.md §5 — the Habits app is a plain event log), so any
   // positive habit with an estimate set is treated as "on the plan every
@@ -143,20 +148,20 @@ export default function TodayView() {
   // you schedule time for, so they're excluded here.
   const habitsForPlan = habits
     .filter((h) => h.type !== "negative" && h.estimatedMinutes)
-    .map((h) => ({ id: h.id, name: h.name, estimatedMinutes: h.estimatedMinutes, done: isHabitLoggedToday(entries, h.id, dayStartMs, dayEndMs) }));
+    .map((h) => ({ id: h.id, name: h.name, estimatedMinutes: h.estimatedMinutes, done: isHabitLoggedOnDate(entries, h.id, dayStartMs, dayEndMs) }));
 
-  const plan = buildDayPlan({ dayShape: selectedShape, tasks: tasksToday, habits: habitsForPlan, squeezeIds });
+  const plan = buildDayPlan({ dayShape: selectedShape, tasks: tasksForDay, habits: habitsForPlan, squeezeIds });
 
-  const gcalToday = gcal.events.map((e) => gcalBlockForDate(e, todayISO)).filter(Boolean);
-  const timedGcal = gcalToday.filter((g) => !g.allDay);
-  const allDayGcal = gcalToday.filter((g) => g.allDay);
+  const gcalForDay = gcal.events.map((e) => gcalBlockForDate(e, selectedISO)).filter(Boolean);
+  const timedGcal = gcalForDay.filter((g) => !g.allDay);
+  const allDayGcal = gcalForDay.filter((g) => g.allDay);
 
   const timedItems = plan.scheduled.filter((s) => s.startMin != null);
   const doneItems = plan.scheduled.filter((s) => s.startMin == null);
 
   const merged = [...plan.fixed, ...timedGcal, ...timedItems].sort((a, b) => a.startMin - b.startMin);
   const nowMin = nowMinutes(now);
-  let dividerInserted = false;
+  let dividerInserted = !isToday;
 
   const toggleSqueeze = (kind, id) => {
     setSqueezeIds((prev) => {
@@ -168,6 +173,10 @@ export default function TodayView() {
     });
   };
 
+  // Marking something done stamps the real current time (`toggleTask`,
+  // `logEntry`) — meaningful for today, but not for a day being planned
+  // ahead of or behind it — so the checkbox is read-only off today (see
+  // ItemRow's `interactive` prop).
   const toggleHabitDone = (habitId, done) => {
     if (done) {
       const todays = entries.filter((e) => e.habitId === habitId && e.ts >= dayStartMs && e.ts < dayEndMs);
@@ -178,16 +187,20 @@ export default function TodayView() {
     }
   };
 
-  const deferTaskToTomorrow = (taskId) => {
+  const deferTaskForward = (taskId) => {
     const t = tasks.find((x) => x.id === taskId);
     if (!t) return;
-    const tomorrowISO = toISO(addDays(startOfToday(), 1));
+    const nextISO = toISO(addDays(selectedDate, 1));
     const patch = {};
-    if (t.dueDate) patch.dueDate = tomorrowISO;
-    if (t.startDate) patch.startDate = tomorrowISO;
-    if (!t.dueDate && !t.startDate) patch.startDate = tomorrowISO;
+    if (t.dueDate) patch.dueDate = nextISO;
+    if (t.startDate) patch.startDate = nextISO;
+    if (!t.dueDate && !t.startDate) patch.startDate = nextISO;
     updateTask(taskId, patch);
   };
+
+  const goPrevDay = () => setSelectedDate((d) => addDays(d, -1));
+  const goNextDay = () => setSelectedDate((d) => addDays(d, 1));
+  const goToday = () => setSelectedDate(todayDate);
 
   const loading = tasksLoading || habitsLoading || shapesLoading;
   const met = plan.freeMin >= 0 && plan.totalDiscretionaryMin > 0 && plan.freeMin / plan.totalDiscretionaryMin >= 0.25;
@@ -199,6 +212,12 @@ export default function TodayView() {
 
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  const selectedDateStr = selectedDate.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
+  const relativeLabel = dayOffset === 0 ? "today" : dayOffset === 1 ? "tomorrow" : dayOffset === -1 ? "yesterday" : null;
+  const dayLabel = relativeLabel ? `${relativeLabel} · ${selectedDateStr}` : selectedDateStr;
+  const planLabel = dayOffset === 0 ? "today's plan" : dayOffset === 1 ? "tomorrow's plan" : `plan for ${selectedDateStr}`;
+  const deferLabel = dayOffset === -1 ? "defer → today" : dayOffset === 0 ? "defer → tomorrow" : "defer → next day";
 
   return (
     <div
@@ -217,7 +236,36 @@ export default function TodayView() {
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
             {dateStr} · {timeStr}
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>~/today</div>
+          <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>~/planner</div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
+          <span onClick={goPrevDay} style={{ cursor: "pointer", display: "flex" }} aria-label="previous day">
+            <ChevronLeft size={18} color={COLORS.dim} />
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "13px", color: COLORS.text, letterSpacing: "0.3px" }}>{dayLabel}</span>
+            {!isToday && (
+              <button
+                onClick={goToday}
+                style={{
+                  background: "none",
+                  border: `1px solid ${COLORS.border}`,
+                  color: COLORS.dim,
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: "10px",
+                  padding: "3px 8px",
+                  borderRadius: "5px",
+                  cursor: "pointer",
+                }}
+              >
+                today
+              </button>
+            )}
+          </div>
+          <span onClick={goNextDay} style={{ cursor: "pointer", display: "flex" }} aria-label="next day">
+            <ChevronRight size={18} color={COLORS.dim} />
+          </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "14px 20px", borderBottom: `1px solid ${COLORS.border}`, flexWrap: "wrap" }}>
@@ -226,7 +274,7 @@ export default function TodayView() {
           {dayShapes.map((s) => (
             <span
               key={s.id}
-              onClick={() => setOverrideForDate(todayISO, s.id)}
+              onClick={() => setOverrideForDate(selectedISO, s.id)}
               style={{
                 fontSize: "9.5px",
                 padding: "3px 9px",
@@ -265,12 +313,12 @@ export default function TodayView() {
 
         {!selectedShape && dayShapes.length > 0 && (
           <div style={{ padding: "10px 20px", fontSize: "11px", color: COLORS.dim, borderBottom: `1px solid ${COLORS.border}` }}>
-            no day shape picked for today — tap one above
+            no day shape picked for this day — tap one above
           </div>
         )}
 
         <div style={{ padding: "10px 20px", fontSize: "10.5px", color: COLORS.dim, letterSpacing: "1px", textTransform: "uppercase", borderBottom: `1px solid ${COLORS.border}` }}>
-          today's plan
+          {planLabel}
         </div>
 
         {allDayGcal.map((g, i) => (
@@ -278,7 +326,7 @@ export default function TodayView() {
         ))}
 
         {merged.map((row, i) => {
-          const showDivider = !dividerInserted && row.startMin > nowMin;
+          const showDivider = isToday && !dividerInserted && row.startMin > nowMin;
           if (showDivider) dividerInserted = true;
           const el =
             row.kind === "fixed" ? (
@@ -289,6 +337,7 @@ export default function TodayView() {
               <ItemRow
                 key={`${row.kind}-${row.id}`}
                 item={row}
+                interactive={isToday}
                 onToggle={() => (row.kind === "habit" ? toggleHabitDone(row.id, row.done) : toggleTask(row.id))}
               />
             );
@@ -301,13 +350,18 @@ export default function TodayView() {
             el
           );
         })}
-        {!dividerInserted && merged.length > 0 && <NowDivider nowMin={nowMin} />}
+        {isToday && !dividerInserted && merged.length > 0 && <NowDivider nowMin={nowMin} />}
 
         {doneItems.length > 0 && (
           <>
-            <div style={{ padding: "8px 20px", fontSize: "9.5px", color: COLORS.dim, letterSpacing: "1px", textTransform: "uppercase" }}>done today</div>
+            <div style={{ padding: "8px 20px", fontSize: "9.5px", color: COLORS.dim, letterSpacing: "1px", textTransform: "uppercase" }}>{isToday ? "done today" : "done"}</div>
             {doneItems.map((item) => (
-              <ItemRow key={`${item.kind}-${item.id}`} item={item} onToggle={() => (item.kind === "habit" ? toggleHabitDone(item.id, true) : toggleTask(item.id))} />
+              <ItemRow
+                key={`${item.kind}-${item.id}`}
+                item={item}
+                interactive={isToday}
+                onToggle={() => (item.kind === "habit" ? toggleHabitDone(item.id, true) : toggleTask(item.id))}
+              />
             ))}
           </>
         )}
@@ -315,7 +369,7 @@ export default function TodayView() {
         {plan.overflow.length > 0 && (
           <>
             <div style={{ padding: "10px 20px", fontSize: "10.5px", color: COLORS.dim, letterSpacing: "1px", textTransform: "uppercase", borderBottom: `1px solid ${COLORS.border}`, marginTop: "6px" }}>
-              overflow — didn't fit today
+              overflow — didn't fit{isToday ? " today" : ""}
             </div>
             {plan.overflow.map((item) => (
               <OverflowRow
@@ -323,7 +377,8 @@ export default function TodayView() {
                 item={item}
                 squeezed={squeezeIds.has(`${item.kind}:${item.id}`)}
                 onSqueeze={() => toggleSqueeze(item.kind, item.id)}
-                onDefer={() => deferTaskToTomorrow(item.id)}
+                onDefer={() => deferTaskForward(item.id)}
+                deferLabel={deferLabel}
               />
             ))}
           </>

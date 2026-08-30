@@ -22,7 +22,7 @@ const fieldStyle = {
 
 // Manages DayShapes (named sets of fixed blocks — commute, work, routines —
 // see ARCHITECTURE.md §7 "Templates vs. routines/checklists") and each
-// shape's weekday defaults, opened from the Today view's day-shape switcher.
+// shape's weekday defaults, opened from the Day Planner view's day-shape switcher.
 export function DayShapeEditModal({ dayShapes, onAdd, onUpdate, onRemove, onClose }) {
   const [selectedId, setSelectedId] = useState(dayShapes[0]?.id ?? null);
   const [newName, setNewName] = useState("");
