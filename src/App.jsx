@@ -5,7 +5,7 @@ import TaskManagerApp from "./apps/TaskManagerApp.jsx";
 import CountdownsApp from "./apps/CountdownsApp.jsx";
 import HoursApp from "./apps/HoursApp.jsx";
 import HabitsApp from "./apps/HabitsApp.jsx";
-import TodayApp from "./apps/TodayApp.jsx";
+import DayPlannerApp from "./apps/DayPlannerApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
 const APPS = {
@@ -13,7 +13,7 @@ const APPS = {
   countdowns: CountdownsApp,
   hours: HoursApp,
   habits: HabitsApp,
-  today: TodayApp,
+  dayplanner: DayPlannerApp,
 };
 
 // Home screen launches into one of three apps; each app owns its own

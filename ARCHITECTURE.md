@@ -132,7 +132,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Task manager | Tasks, Matrix, Calendar, Templates, Tags | bottom tab bar (5 tabs) | all 5 are lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than five launcher tiles |
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
 | Hours | Hours | none (single view) | worklog + per-week configurable target |
-| Today | Today | none (single view) | day plan assembled from tasks/habits/day shapes — see §7 |
+| Day Planner | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7 |
 | *(not built)* | — | — | settings — see §7 |
 
 | View | Reads | Writes | Notes |
@@ -274,31 +274,34 @@ These came up in the process and were deliberately deferred — listed here so t
     function more than once per call (e.g. Strict Mode in dev); `putTask`/`deleteTask` are
     idempotent either way, but `spawnNextOccurrence` mints a new task id, so running it twice
     would double up the next occurrence.
-- **Templates vs. routines/checklists (resolved — see "Today / day planner" below)**: templates
+- **Templates vs. routines/checklists (resolved — see "Day Planner" below)**: templates
   were simplified to single-task presets. The earlier "bundle of N tasks run together" concept
-  became `DayShape`, built as part of the Today app rather than a Templates variant, since its
-  job is carving out a day's fixed time (commute/work/routine blocks), not producing tasks.
-- **Today / day planner (implemented)**: a new single-view app, `TodayView.jsx`, answering "what
-  should I do today, and how much free time is left" from data the other apps already own —
-  no new task/habit source of truth, just a composition layer (`src/lib/dayPlan.js`) plus two
-  small new stores.
+  became `DayShape`, built as part of the Day Planner app rather than a Templates variant, since
+  its job is carving out a day's fixed time (commute/work/routine blocks), not producing tasks.
+- **Day Planner (implemented)**: a single-view app, `DayPlannerView.jsx`, answering "what should
+  I do on a given day, and how much free time is left" from data the other apps already own — no
+  new task/habit source of truth, just a composition layer (`src/lib/dayPlan.js`) plus two small
+  new stores. It defaults to today but a prev/next day nav (plus a "today" jump) lets it plan any
+  date, forward or back — useful for e.g. planning tomorrow's day the night before.
   - **DayShape**: `{ id, name, blocks: [{label, startMinutes, durationMinutes}], weekdays }`
     (`dayshapes` store) — a named set of fixed blocks (commute, work, routines), assignable to
     weekdays as a default (`weekdays`, 0=Mon..6=Sun, same convention as `Template.recurring.days`)
     with a one-tap per-date override (`dayoverrides` store, at most one row per date, only written
-    when it differs from the weekday default). Managed from Today's own `DayShapeEditModal.jsx`
-    rather than a settings screen (still §7 "Settings view: doesn't exist yet").
+    when it differs from the weekday default). Managed from Day Planner's own
+    `DayShapeEditModal.jsx` rather than a settings screen (still §7 "Settings view: doesn't exist
+    yet"). `dayShapeForDate(dateISO, weekday)` (`useDayShapes.js`) already took an arbitrary date,
+    not just today, so no change was needed there to support planning other days.
   - **Planning window**: fixed `06:30`–`23:00` (`DAY_START_MIN`/`DAY_END_MIN` in `dayPlan.js`)
     stands in for a real wake/sleep setting, same posture as `WeekTarget` defaulting to 40h —
     no settings view yet to make it configurable.
   - **`Task.estimatedMinutes?`/`Habit.estimatedMinutes?`**: optional; unset items simply don't
-    enter the time budget. A task is "on today's plan" if it's overdue-or-due-today, explicitly
-    started today with no due date, or already completed today (`isTaskForToday`) — narrowing
-    the same start/due semantics Tasks/Matrix already use (`taskDates.js`), not a new filter
-    concept. Habits have no due-date/frequency field of their own (the Habits app is a plain
-    event log — see §5), so any *positive* habit with an estimate is treated as on the plan every
-    day until logged today; negative ("cutting down on") habits are excluded — you don't schedule
-    time for those.
+    enter the time budget. A task is "on a given day's plan" if it's overdue-or-due-by that date,
+    explicitly started that day with no due date, or already completed that day
+    (`isTaskForDate`) — narrowing the same start/due semantics Tasks/Matrix already use
+    (`taskDates.js`), not a new filter concept. Habits have no due-date/frequency field of their
+    own (the Habits app is a plain event log — see §5), so any *positive* habit with an estimate
+    is treated as on the plan every day until logged that day (`isHabitLoggedOnDate`); negative
+    ("cutting down on") habits are excluded — you don't schedule time for those.
   - **Fill algorithm** (`buildDayPlan`): a DayShape's blocks carve fixed time out of the planning
     window; what's left ("discretionary" time) is greedily filled — habits first (quick,
     routine-anchored), then tasks by quadrant rank (`do` > `schedule` > `delegate` > `drop`) — and
@@ -311,9 +314,13 @@ These came up in the process and were deliberately deferred — listed here so t
     `"task:<id>"`/`"habit:<id>"` keys, reset on reload) that forces an item onto the plan on top
     of the normal fill, overbooking the day rather than failing to place it — the budget number
     goes negative and the progress bar and free-time figure flip to the danger color. "Defer →
-    tomorrow" is a real mutation (`updateTask`, pushing `dueDate`/`startDate` to tomorrow) and is
-    task-only — deferring a habit's "due today" isn't a meaningful action since habits have no
-    date field to push.
+    next day" is a real mutation (`updateTask`, pushing `dueDate`/`startDate` to the day after
+    whichever day is being viewed) and is task-only — deferring a habit's "due" state isn't a
+    meaningful action since habits have no date field to push.
+  - **Completion is today-only**: `toggleTask`/`logEntry` stamp the real current time, so marking
+    something done only makes sense while viewing today — the checkbox is read-only (dimmed, no
+    click handler) when browsing a different day, even though the rest of the plan (fixed blocks,
+    scheduled items, overflow, squeeze/defer) stays fully interactive on any date.
 - **Work hours**: single session per day only (no split days). No export needed (confirmed).
   Weekly target is configurable per-week, defaulting to 40h.
 - **Navigation shell (resolved)**: 7 views was too many for a standard bottom nav (~5 max), and

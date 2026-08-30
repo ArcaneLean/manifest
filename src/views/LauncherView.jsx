@@ -3,7 +3,7 @@ import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 
 const APPS = [
-  { key: "today", label: "today", path: "~/today", icon: CalendarCheck2, desc: "day plan · time left" },
+  { key: "dayplanner", label: "day planner", path: "~/planner", icon: CalendarCheck2, desc: "day plan · time left · plan ahead" },
   {
     key: "taskmanager",
     label: "task manager",
