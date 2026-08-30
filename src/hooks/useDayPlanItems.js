@@ -48,5 +48,29 @@ export function useDayPlanItems() {
   const unplanTask = (dateISO, taskId) =>
     updateDate(dateISO, (cur) => ({ ...cur, taskIds: cur.taskIds.filter((id) => id !== taskId) }));
 
-  return { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, loading };
+  // Array position in `habitIds`/`taskIds` doubles as each list's manual
+  // schedule order (see buildDayPlan) — swapping adjacent entries, same
+  // pattern as DayShapeEditModal's moveBlock, is enough to make the Day
+  // Planner timeline's up/down controls a real (persisted) reorder.
+  const moveHabit = (dateISO, habitId, dir) =>
+    updateDate(dateISO, (cur) => {
+      const ids = [...cur.habitIds];
+      const i = ids.indexOf(habitId);
+      const j = i + dir;
+      if (i === -1 || j < 0 || j >= ids.length) return cur;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      return { ...cur, habitIds: ids };
+    });
+
+  const moveTask = (dateISO, taskId, dir) =>
+    updateDate(dateISO, (cur) => {
+      const ids = [...cur.taskIds];
+      const i = ids.indexOf(taskId);
+      const j = i + dir;
+      if (i === -1 || j < 0 || j >= ids.length) return cur;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      return { ...cur, taskIds: ids };
+    });
+
+  return { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, moveHabit, moveTask, loading };
 }
