@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Cog, Cloud, Flame, ChevronLeft, ChevronRight, ListPlus, X } from "lucide-react";
+import { Cog, Cloud, Flame, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ListPlus, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { DayShapeEditModal } from "../components/DayShapeEditModal.jsx";
@@ -31,19 +31,42 @@ function timeToMin(hhmm) {
 
 const GCAL_COLOR = "#6b8fb5"; // matches CalendarView.jsx's GCAL_COLOR exactly
 
-function timeCol(startMin, durationLabel) {
+// Shows the block's end time alongside its duration, not just its start —
+// so two rows scheduled back-to-back make their shared boundary (and any
+// gap between them) legible without doing startMin+duration arithmetic.
+function timeCol(startMin, endMin, durationLabel) {
   return (
-    <div style={{ width: "56px", flexShrink: 0 }}>
+    <div style={{ width: "70px", flexShrink: 0 }}>
       <div style={{ fontSize: "12px", color: COLORS.text }}>{startMin == null ? "—" : minutesToClock(startMin)}</div>
-      <div style={{ fontSize: "9.5px", color: COLORS.dim, marginTop: "1px" }}>{durationLabel}</div>
+      <div style={{ fontSize: "9.5px", color: COLORS.dim, marginTop: "1px" }}>
+        {endMin == null ? durationLabel : `${minutesToClock(endMin)} · ${durationLabel}`}
+      </div>
     </div>
+  );
+}
+
+// Up/down chevrons for reordering a planned habit/task within its own
+// list — same affordance as DayShapeEditModal's moveBlock, the only other
+// reorder control in the app. Absent (not just disabled) props hide the
+// control entirely: a due-but-unplanned task has no manual order to move
+// within, and a boundary item (already first/last) shows a dimmed arrow.
+function ReorderControls({ onMoveUp, onMoveDown }) {
+  return (
+    <span style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+      <span onClick={onMoveUp || undefined} style={{ cursor: onMoveUp ? "pointer" : "default", opacity: onMoveUp ? 1 : 0.25 }} aria-label="move up">
+        <ChevronUp size={12} color={COLORS.dim} />
+      </span>
+      <span onClick={onMoveDown || undefined} style={{ cursor: onMoveDown ? "pointer" : "default", opacity: onMoveDown ? 1 : 0.25 }} aria-label="move down">
+        <ChevronDown size={12} color={COLORS.dim} />
+      </span>
+    </span>
   );
 }
 
 function FixedRow({ block }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 20px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${COLORS.borderBright}` }}>
-      {timeCol(block.startMin, formatDuration(block.endMin - block.startMin))}
+      {timeCol(block.startMin, block.endMin, formatDuration(block.endMin - block.startMin))}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "12.5px", color: COLORS.text }}>{block.label || "untitled block"}</div>
         <div style={{ fontSize: "9px", letterSpacing: "0.5px", textTransform: "uppercase", color: COLORS.dim, marginTop: "2px" }}>
@@ -62,7 +85,7 @@ function GCalRow({ block }) {
       rel="noreferrer"
       style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 20px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${GCAL_COLOR}`, textDecoration: "none" }}
     >
-      {timeCol(block.allDay ? null : block.startMin, block.allDay ? "all day" : formatDuration(block.endMin - block.startMin))}
+      {timeCol(block.allDay ? null : block.startMin, block.allDay ? null : block.endMin, block.allDay ? "all day" : formatDuration(block.endMin - block.startMin))}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "12.5px", color: COLORS.text }}>{block.label}</div>
         <div style={{ fontSize: "9px", letterSpacing: "0.5px", textTransform: "uppercase", color: GCAL_COLOR, marginTop: "2px" }}>google calendar</div>
@@ -72,12 +95,13 @@ function GCalRow({ block }) {
   );
 }
 
-function ItemRow({ item, onToggle, interactive, onUnplan, planned, dateDriven }) {
+function ItemRow({ item, onToggle, interactive, onUnplan, planned, dateDriven, onMoveUp, onMoveDown }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.done ? COLORS.border : item.quadrant.color;
+  const reorderable = onMoveUp !== undefined;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 20px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${stripe}` }}>
-      {timeCol(item.startMin, item.startMin == null ? "" : formatDuration(item.durationMin))}
+      {timeCol(item.startMin, item.endMin, item.startMin == null ? "" : formatDuration(item.durationMin))}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "12.5px", color: item.done ? COLORS.dim : COLORS.text }}>{item.label}</div>
         <div style={{ fontSize: "9px", letterSpacing: "0.5px", textTransform: "uppercase", color: isHabit ? COLORS.sage : item.quadrant.color, marginTop: "2px" }}>
@@ -87,6 +111,7 @@ function ItemRow({ item, onToggle, interactive, onUnplan, planned, dateDriven })
         </div>
       </div>
       {isHabit && <Flame size={12} color={COLORS.sage} strokeWidth={1.75} />}
+      {reorderable && <ReorderControls onMoveUp={onMoveUp} onMoveDown={onMoveDown} />}
       {onUnplan && (
         <span onClick={onUnplan} style={{ cursor: "pointer", opacity: 0.6 }} aria-label="remove from plan">
           <X size={12} color={COLORS.dim} />
@@ -109,13 +134,15 @@ function NowDivider({ nowMin }) {
   );
 }
 
-function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel, onUnplan }) {
+function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel, onUnplan, onMoveUp, onMoveDown }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.quadrant.color;
+  const reorderable = onMoveUp !== undefined;
   return (
     <div style={{ padding: "12px 20px", borderBottom: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${stripe}` }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "8px" }}>
-        <span style={{ fontSize: "12.5px", color: COLORS.text }}>{item.label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+        {reorderable && <ReorderControls onMoveUp={onMoveUp} onMoveDown={onMoveDown} />}
+        <span style={{ fontSize: "12.5px", color: COLORS.text, flex: 1, minWidth: 0 }}>{item.label}</span>
         <span style={{ fontSize: "10px", color: COLORS.dim }}>{formatDuration(item.durationMin)}</span>
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
@@ -159,7 +186,7 @@ export default function DayPlannerView() {
     extraBlocksForDate,
     loading: shapesLoading,
   } = useDayShapes();
-  const { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, loading: plannedLoading } = useDayPlanItems();
+  const { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, moveHabit, moveTask, loading: plannedLoading } = useDayPlanItems();
   const gcal = useGoogleCalendar();
   const [squeezeIds, setSqueezeIds] = useState(new Set());
   const [managingShapes, setManagingShapes] = useState(false);
@@ -188,11 +215,16 @@ export default function DayPlannerView() {
   // explicitly planned for this date show up at all.
   const dueTaskIds = new Set(tasks.filter((t) => isTaskForDate(t, selectedISO, dayStartMs, dayEndMs)).map((t) => t.id));
   const tasksForDay = tasks.filter((t) => dueTaskIds.has(t.id) || planned.taskIds.includes(t.id));
-  const habitsForPlan = habits
-    .filter((h) => h.type !== "negative" && planned.habitIds.includes(h.id))
+  // Built by walking `planned.habitIds` (the dayplans row's own order, also
+  // this list's manual reorder sequence — see moveHabit) rather than
+  // `habits`' own array, so habitItems in buildDayPlan schedules them in
+  // the order the user actually arranged, not habit-creation order.
+  const habitsForPlan = planned.habitIds
+    .map((id) => habits.find((h) => h.id === id))
+    .filter((h) => h && h.type !== "negative")
     .map((h) => ({ id: h.id, name: h.name, estimatedMinutes: h.estimatedMinutes || 0, done: isHabitLoggedOnDate(entries, h.id, dayStartMs, dayEndMs) }));
 
-  const plan = buildDayPlan({ wakeMinutes, blocks: blocksForDay, tasks: tasksForDay, habits: habitsForPlan, squeezeIds });
+  const plan = buildDayPlan({ wakeMinutes, blocks: blocksForDay, tasks: tasksForDay, habits: habitsForPlan, squeezeIds, taskOrder: planned.taskIds });
 
   const gcalForDay = gcal.events.map((e) => gcalBlockForDate(e, selectedISO)).filter(Boolean);
   const timedGcal = gcalForDay.filter((g) => !g.allDay);
@@ -245,6 +277,23 @@ export default function DayPlannerView() {
     else unplanTask(selectedISO, row.id);
   };
   const isPlanned = (row) => (row.kind === "habit" ? planned.habitIds.includes(row.id) : planned.taskIds.includes(row.id));
+
+  // Reorder controls only make sense for items with a manual position to
+  // move within — i.e. explicitly planned habits/tasks (see moveHabit/
+  // moveTask) — so a due-but-unplanned task or a fixed/gcal block gets
+  // `undefined` here, which ItemRow/OverflowRow read as "no control at all"
+  // rather than a disabled one.
+  const reorderProps = (row) => {
+    const ids = row.kind === "habit" ? planned.habitIds : row.kind === "task" ? planned.taskIds : null;
+    if (!ids) return {};
+    const idx = ids.indexOf(row.id);
+    if (idx === -1) return {};
+    const mover = row.kind === "habit" ? moveHabit : moveTask;
+    return {
+      onMoveUp: idx > 0 ? () => mover(selectedISO, row.id, -1) : null,
+      onMoveDown: idx < ids.length - 1 ? () => mover(selectedISO, row.id, 1) : null,
+    };
+  };
 
   const goPrevDay = () => setSelectedDate((d) => addDays(d, -1));
   const goNextDay = () => setSelectedDate((d) => addDays(d, 1));
@@ -417,6 +466,7 @@ export default function DayPlannerView() {
                 planned={isPlanned(row)}
                 dateDriven={row.kind === "task" && dueTaskIds.has(row.id)}
                 onUnplan={isPlanned(row) ? () => unplanRow(row) : null}
+                {...reorderProps(row)}
               />
             );
           return showDivider ? (
@@ -461,6 +511,7 @@ export default function DayPlannerView() {
                 onDefer={() => deferTaskForward(item.id)}
                 deferLabel={deferLabel}
                 onUnplan={isPlanned(item) ? () => unplanRow(item) : null}
+                {...reorderProps(item)}
               />
             ))}
           </>

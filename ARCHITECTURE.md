@@ -332,6 +332,19 @@ These came up in the process and were deliberately deferred — listed here so t
     subtracted from the budget (they typically overlap a fixed work block already, and multi-day
     timed events are a known gap — only an event whose local start day matches is shown, the same
     boundary CalendarView's own multi-day handling draws).
+  - **Manual reorder of planned habits/tasks**: `dayplans`' `habitIds`/`taskIds` arrays were
+    already ordered (insertion order from `planHabit`/`planTask`) but that order went unused —
+    habits scheduled in whatever order the global `habits` list happened to have them, tasks
+    always by quadrant rank. Up/down chevrons on each timeline row (`ItemRow`/`OverflowRow` in
+    `DayPlannerView.jsx`, same affordance as `DayShapeEditModal`'s block reorder) now swap
+    adjacent entries via `useDayPlanItems.js`'s `moveHabit`/`moveTask`, and `buildDayPlan` reads
+    that array position back out: habits schedule in `habitIds` order outright, while tasks sort
+    by position within `taskOrder` first and quadrant rank only as a fallback/tiebreak — so an
+    explicitly planned task's manual position overrides its quadrant, but a task that's only on
+    the plan because it's due today (never explicitly planned, no entry in `taskOrder`) still
+    falls back to quadrant-rank order, sorting after every manually-ordered one. The timeline
+    also now shows each row's end time (not just start), so consecutive rows' shared boundary —
+    and any gap between rows — reads without doing startMin+duration arithmetic.
   - **Overflow actions**: "squeeze in" is ephemeral, unpersisted UI state (a `Set` of
     `"task:<id>"`/`"habit:<id>"` keys, reset on reload) that forces an item onto the plan on top
     of the normal fill, overbooking the day rather than failing to place it — the budget number
