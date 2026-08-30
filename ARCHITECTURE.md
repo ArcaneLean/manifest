@@ -280,35 +280,57 @@ These came up in the process and were deliberately deferred — listed here so t
   its job is carving out a day's fixed time (commute/work/routine blocks), not producing tasks.
 - **Day Planner (implemented)**: a single-view app, `DayPlannerView.jsx`, answering "what should
   I do on a given day, and how much free time is left" from data the other apps already own — no
-  new task/habit source of truth, just a composition layer (`src/lib/dayPlan.js`) plus two small
+  new task/habit source of truth, just a composition layer (`src/lib/dayPlan.js`) plus three small
   new stores. It defaults to today but a prev/next day nav (plus a "today" jump) lets it plan any
   date, forward or back — useful for e.g. planning tomorrow's day the night before.
-  - **DayShape**: `{ id, name, blocks: [{label, startMinutes, durationMinutes}], weekdays }`
-    (`dayshapes` store) — a named set of fixed blocks (commute, work, routines), assignable to
-    weekdays as a default (`weekdays`, 0=Mon..6=Sun, same convention as `Template.recurring.days`)
-    with a one-tap per-date override (`dayoverrides` store, at most one row per date, only written
-    when it differs from the weekday default). Managed from Day Planner's own
-    `DayShapeEditModal.jsx` rather than a settings screen (still §7 "Settings view: doesn't exist
-    yet"). `dayShapeForDate(dateISO, weekday)` (`useDayShapes.js`) already took an arbitrary date,
-    not just today, so no change was needed there to support planning other days.
-  - **Planning window**: fixed `06:30`–`23:00` (`DAY_START_MIN`/`DAY_END_MIN` in `dayPlan.js`)
-    stands in for a real wake/sleep setting, same posture as `WeekTarget` defaulting to 40h —
-    no settings view yet to make it configurable.
+  - **DayShape**: `{ id, name, wakeMinutes, blocks: [{id, label, anchor, startMinutes?,
+    durationMinutes}], weekdays }` (`dayshapes` store) — a named set of blocks (commute, work,
+    routines), assignable to weekdays as a default (`weekdays`, 0=Mon..6=Sun, same convention as
+    `Template.recurring.days`) with a one-tap per-date override (`dayoverrides` store, at most one
+    row per date, only written when it differs from the weekday default). Managed from Day
+    Planner's own `DayShapeEditModal.jsx` rather than a settings screen (still §7 "Settings view:
+    doesn't exist yet"). `dayShapeForDate(dateISO, weekday)` (`useDayShapes.js`) already took an
+    arbitrary date, not just today, so no change was needed there to support planning other days.
+  - **Wake time as the day's anchor, chained vs. fixed blocks**: each block's `anchor` is either
+    `"fixed"` (a specific clock time, `startMinutes`) or `"chained"` (starts right where the
+    previous block in the list ends, or at the day's wake time if it's first) — `resolveBlocks`
+    (`dayPlan.js`) walks the block list in array order to compute each one's actual start/end, so
+    reordering blocks in `DayShapeEditModal` is a real control, not cosmetic. This lets a sequence
+    like wake → morning routine → commute all shift together when wake time changes (so "when can
+    I leave for work" and "when do I get home" fall out of the block chain instead of needing a
+    dedicated field), while something like dinner or a bedtime routine can stay pinned to a fixed
+    clock time regardless of how the day before it ran. Legacy blocks (no `anchor` field, only
+    `startMinutes`) resolve as `"fixed"`, their original behavior — no migration needed. Wake time
+    itself resolves date override → DayShape's own `wakeMinutes` → the `DAY_START_MIN` (06:30)
+    fallback constant; there's still no per-day sleep-end setting, so `DAY_END_MIN` (23:00) stays
+    a global constant, same posture as `WeekTarget` defaulting to 40h.
+  - **Ad hoc extra blocks per date**: `dayoverrides` rows can also carry `wakeMinutes` (a one-off
+    wake-time override) and `extraBlocks` (blocks that exist only for that one date — e.g. "airport
+    commute" — never promoted into a DayShape template), managed from the Day Planner's "plan"
+    button (`PlanDayModal.jsx`) alongside habit/task planning below, rather than from
+    `DayShapeEditModal`, which only edits weekday templates.
+  - **Planning is opt-in (changed)**: nothing shows up on a day's plan by default anymore. A new
+    `dayplans` store (`{ date, habitIds, taskIds }`, via `useDayPlanItems.js`) holds an explicit
+    per-date list of what's been planned; both habits and tasks require being added there before
+    they're scheduled. This replaced the old "every positive habit with an estimate is on the plan
+    every day" default (too noisy for the common case of *not* planning most habits daily) — a
+    task's usual due/start-date-driven inclusion (`isTaskForDate`, unchanged) still applies
+    independently, so a genuinely due task still shows without being explicitly planned, but
+    planning a task for a day no longer requires (and never sets) a `startDate`/`dueDate` — the two
+    are deliberately decoupled, since "work on this today" and "this is due today" are different
+    facts about a task. An item that's explicitly planned gets an unplan (`×`) affordance in the
+    timeline (`ItemRow`/`OverflowRow`'s `onUnplan`); a task that's *also* due keeps showing even
+    after being unplanned, which is intentional (unplanning only removes the opt-in flag, not the
+    due date), and its "planned + due" label makes that legible.
   - **`Task.estimatedMinutes?`/`Habit.estimatedMinutes?`**: optional; unset items simply don't
-    enter the time budget. A task is "on a given day's plan" if it's overdue-or-due-by that date,
-    explicitly started that day with no due date, or already completed that day
-    (`isTaskForDate`) — narrowing the same start/due semantics Tasks/Matrix already use
-    (`taskDates.js`), not a new filter concept. Habits have no due-date/frequency field of their
-    own (the Habits app is a plain event log — see §5), so any *positive* habit with an estimate
-    is treated as on the plan every day until logged that day (`isHabitLoggedOnDate`); negative
-    ("cutting down on") habits are excluded — you don't schedule time for those.
-  - **Fill algorithm** (`buildDayPlan`): a DayShape's blocks carve fixed time out of the planning
-    window; what's left ("discretionary" time) is greedily filled — habits first (quick,
-    routine-anchored), then tasks by quadrant rank (`do` > `schedule` > `delegate` > `drop`) — and
-    whatever doesn't fit is reported as `overflow` rather than silently dropped. Google Calendar
-    events are merged into the rendered timeline for visibility only; they're never subtracted
-    from the budget (they typically overlap a fixed work block already, and multi-day timed
-    events are a known gap — only an event whose local start day matches is shown, the same
+    enter the time budget.
+  - **Fill algorithm** (`buildDayPlan`): resolved blocks (see above) carve fixed time out of the
+    planning window; what's left ("discretionary" time) is greedily filled — planned habits first
+    (quick, routine-anchored), then planned tasks by quadrant rank (`do` > `schedule` > `delegate`
+    > `drop`) — and whatever doesn't fit is reported as `overflow` rather than silently dropped.
+    Google Calendar events are merged into the rendered timeline for visibility only; they're never
+    subtracted from the budget (they typically overlap a fixed work block already, and multi-day
+    timed events are a known gap — only an event whose local start day matches is shown, the same
     boundary CalendarView's own multi-day handling draws).
   - **Overflow actions**: "squeeze in" is ephemeral, unpersisted UI state (a `Set` of
     `"task:<id>"`/`"habit:<id>"` keys, reset on reload) that forces an item onto the plan on top

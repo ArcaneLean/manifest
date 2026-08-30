@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Cog, Cloud, Flame, ChevronLeft, ChevronRight } from "lucide-react";
+import { Cog, Cloud, Flame, ChevronLeft, ChevronRight, ListPlus, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { DayShapeEditModal } from "../components/DayShapeEditModal.jsx";
+import { PlanDayModal } from "../components/PlanDayModal.jsx";
 import { QUADRANTS, quadrantFor } from "../lib/quadrant.js";
 import { toISO, startOfToday, addDays, daysBetween } from "../lib/dateUtils.js";
 import {
@@ -18,8 +19,15 @@ import { useClock } from "../hooks/useClock.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useHabits } from "../hooks/useHabits.js";
 import { useDayShapes } from "../hooks/useDayShapes.js";
+import { useDayPlanItems } from "../hooks/useDayPlanItems.js";
 import { useGoogleCalendar } from "../hooks/useGoogleCalendar.js";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
+
+function timeToMin(hhmm) {
+  if (!hhmm) return 0;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
 
 const GCAL_COLOR = "#6b8fb5"; // matches CalendarView.jsx's GCAL_COLOR exactly
 
@@ -38,7 +46,9 @@ function FixedRow({ block }) {
       {timeCol(block.startMin, formatDuration(block.endMin - block.startMin))}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "12.5px", color: COLORS.text }}>{block.label || "untitled block"}</div>
-        <div style={{ fontSize: "9px", letterSpacing: "0.5px", textTransform: "uppercase", color: COLORS.dim, marginTop: "2px" }}>fixed · day shape</div>
+        <div style={{ fontSize: "9px", letterSpacing: "0.5px", textTransform: "uppercase", color: COLORS.dim, marginTop: "2px" }}>
+          {block.anchor === "chained" ? "after previous" : "fixed time"}
+        </div>
       </div>
     </div>
   );
@@ -62,7 +72,7 @@ function GCalRow({ block }) {
   );
 }
 
-function ItemRow({ item, onToggle, interactive }) {
+function ItemRow({ item, onToggle, interactive, onUnplan, planned, dateDriven }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.done ? COLORS.border : item.quadrant.color;
   return (
@@ -73,9 +83,15 @@ function ItemRow({ item, onToggle, interactive }) {
         <div style={{ fontSize: "9px", letterSpacing: "0.5px", textTransform: "uppercase", color: isHabit ? COLORS.sage : item.quadrant.color, marginTop: "2px" }}>
           {isHabit ? "habit" : item.quadrant.label}
           {item.squeezed ? " · squeezed in" : ""}
+          {!isHabit && planned && dateDriven ? " · planned + due" : !isHabit && planned ? " · planned" : ""}
         </div>
       </div>
       {isHabit && <Flame size={12} color={COLORS.sage} strokeWidth={1.75} />}
+      {onUnplan && (
+        <span onClick={onUnplan} style={{ cursor: "pointer", opacity: 0.6 }} aria-label="remove from plan">
+          <X size={12} color={COLORS.dim} />
+        </span>
+      )}
       <span onClick={interactive ? onToggle : undefined} style={{ cursor: interactive ? "pointer" : "default", opacity: interactive ? 1 : 0.5 }}>
         <Checkbox done={item.done} />
       </span>
@@ -93,7 +109,7 @@ function NowDivider({ nowMin }) {
   );
 }
 
-function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel }) {
+function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel, onUnplan }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.quadrant.color;
   return (
@@ -114,6 +130,11 @@ function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel }) {
             {deferLabel}
           </span>
         )}
+        {onUnplan && (
+          <span onClick={onUnplan} style={{ fontSize: "9.5px", padding: "3px 9px", borderRadius: "5px", border: `1px solid ${COLORS.border}`, color: COLORS.dim, cursor: "pointer" }}>
+            unplan
+          </span>
+        )}
       </div>
     </div>
   );
@@ -123,10 +144,26 @@ export default function DayPlannerView() {
   const now = useClock();
   const { tasks, loading: tasksLoading, toggleTask, updateTask } = useTasks();
   const { habits, entries, loading: habitsLoading, logEntry, removeEntry } = useHabits();
-  const { dayShapes, addDayShape, updateDayShape, removeDayShape, setOverrideForDate, dayShapeForDate, loading: shapesLoading } = useDayShapes();
+  const {
+    dayShapes,
+    addDayShape,
+    updateDayShape,
+    removeDayShape,
+    setOverrideForDate,
+    setWakeOverrideForDate,
+    addExtraBlockForDate,
+    updateExtraBlockForDate,
+    removeExtraBlockForDate,
+    dayShapeForDate,
+    wakeMinutesForDate,
+    extraBlocksForDate,
+    loading: shapesLoading,
+  } = useDayShapes();
+  const { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, loading: plannedLoading } = useDayPlanItems();
   const gcal = useGoogleCalendar();
   const [squeezeIds, setSqueezeIds] = useState(new Set());
   const [managingShapes, setManagingShapes] = useState(false);
+  const [planningDay, setPlanningDay] = useState(false);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
 
   const todayDate = startOfToday();
@@ -139,18 +176,23 @@ export default function DayPlannerView() {
   const weekday = (selectedDate.getDay() + 6) % 7; // 0=Mon..6=Sun, matches recurrence.js
 
   const selectedShape = dayShapeForDate(selectedISO, weekday);
+  const wakeMinutes = wakeMinutesForDate(selectedISO, selectedShape);
+  const extraBlocks = extraBlocksForDate(selectedISO);
+  const blocksForDay = [...(selectedShape?.blocks || []), ...extraBlocks];
+  const planned = plannedForDate(selectedISO);
 
-  const tasksForDay = tasks.filter((t) => isTaskForDate(t, selectedISO, dayStartMs, dayEndMs));
-  // Habits have no due-date/frequency concept of their own (see
-  // ARCHITECTURE.md §5 — the Habits app is a plain event log), so any
-  // positive habit with an estimate set is treated as "on the plan every
-  // day" until logged; negative ("cutting down on") habits aren't something
-  // you schedule time for, so they're excluded here.
+  // A task is on the day either because it's genuinely due/started that day
+  // (isTaskForDate — unchanged, date-driven) or because it was explicitly
+  // planned here without touching its dates (see useDayPlanItems). Habits
+  // carry no schedule of their own and now default to *off*: only ones
+  // explicitly planned for this date show up at all.
+  const dueTaskIds = new Set(tasks.filter((t) => isTaskForDate(t, selectedISO, dayStartMs, dayEndMs)).map((t) => t.id));
+  const tasksForDay = tasks.filter((t) => dueTaskIds.has(t.id) || planned.taskIds.includes(t.id));
   const habitsForPlan = habits
-    .filter((h) => h.type !== "negative" && h.estimatedMinutes)
-    .map((h) => ({ id: h.id, name: h.name, estimatedMinutes: h.estimatedMinutes, done: isHabitLoggedOnDate(entries, h.id, dayStartMs, dayEndMs) }));
+    .filter((h) => h.type !== "negative" && planned.habitIds.includes(h.id))
+    .map((h) => ({ id: h.id, name: h.name, estimatedMinutes: h.estimatedMinutes || 0, done: isHabitLoggedOnDate(entries, h.id, dayStartMs, dayEndMs) }));
 
-  const plan = buildDayPlan({ dayShape: selectedShape, tasks: tasksForDay, habits: habitsForPlan, squeezeIds });
+  const plan = buildDayPlan({ wakeMinutes, blocks: blocksForDay, tasks: tasksForDay, habits: habitsForPlan, squeezeIds });
 
   const gcalForDay = gcal.events.map((e) => gcalBlockForDate(e, selectedISO)).filter(Boolean);
   const timedGcal = gcalForDay.filter((g) => !g.allDay);
@@ -198,11 +240,17 @@ export default function DayPlannerView() {
     updateTask(taskId, patch);
   };
 
+  const unplanRow = (row) => {
+    if (row.kind === "habit") unplanHabit(selectedISO, row.id);
+    else unplanTask(selectedISO, row.id);
+  };
+  const isPlanned = (row) => (row.kind === "habit" ? planned.habitIds.includes(row.id) : planned.taskIds.includes(row.id));
+
   const goPrevDay = () => setSelectedDate((d) => addDays(d, -1));
   const goNextDay = () => setSelectedDate((d) => addDays(d, 1));
   const goToday = () => setSelectedDate(todayDate);
 
-  const loading = tasksLoading || habitsLoading || shapesLoading;
+  const loading = tasksLoading || habitsLoading || shapesLoading || plannedLoading;
   const met = plan.freeMin >= 0 && plan.totalDiscretionaryMin > 0 && plan.freeMin / plan.totalDiscretionaryMin >= 0.25;
   const overbooked = plan.freeMin < 0;
   const freeColor = overbooked ? COLORS.danger : met ? COLORS.sage : COLORS.amber;
@@ -292,6 +340,33 @@ export default function DayPlannerView() {
           </span>
         </div>
 
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+          <span style={{ fontSize: "10.5px", color: COLORS.dim }}>wakes at</span>
+          <input
+            type="time"
+            value={minutesToClock(wakeMinutes)}
+            onChange={(e) => setWakeOverrideForDate(selectedISO, timeToMin(e.target.value))}
+            style={{
+              background: "transparent",
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: "5px",
+              outline: "none",
+              color: COLORS.text,
+              caretColor: COLORS.amber,
+              fontFamily: "'IBM Plex Mono', monospace",
+              colorScheme: "dark",
+              fontSize: "11.5px",
+              padding: "4px 6px",
+            }}
+          />
+          <span
+            onClick={() => setPlanningDay(true)}
+            style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto", cursor: "pointer", fontSize: "10.5px", color: COLORS.amber, border: `1px solid ${COLORS.borderBright}`, borderRadius: "5px", padding: "5px 9px" }}
+          >
+            <ListPlus size={12} /> plan
+          </span>
+        </div>
+
         <div style={{ padding: "18px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px" }}>
             <span style={{ fontSize: "22px", fontWeight: 600, color: freeColor }}>
@@ -339,6 +414,9 @@ export default function DayPlannerView() {
                 item={row}
                 interactive={isToday}
                 onToggle={() => (row.kind === "habit" ? toggleHabitDone(row.id, row.done) : toggleTask(row.id))}
+                planned={isPlanned(row)}
+                dateDriven={row.kind === "task" && dueTaskIds.has(row.id)}
+                onUnplan={isPlanned(row) ? () => unplanRow(row) : null}
               />
             );
           return showDivider ? (
@@ -361,6 +439,9 @@ export default function DayPlannerView() {
                 item={item}
                 interactive={isToday}
                 onToggle={() => (item.kind === "habit" ? toggleHabitDone(item.id, true) : toggleTask(item.id))}
+                planned={isPlanned(item)}
+                dateDriven={item.kind === "task" && dueTaskIds.has(item.id)}
+                onUnplan={isPlanned(item) ? () => unplanRow(item) : null}
               />
             ))}
           </>
@@ -379,6 +460,7 @@ export default function DayPlannerView() {
                 onSqueeze={() => toggleSqueeze(item.kind, item.id)}
                 onDefer={() => deferTaskForward(item.id)}
                 deferLabel={deferLabel}
+                onUnplan={isPlanned(item) ? () => unplanRow(item) : null}
               />
             ))}
           </>
@@ -387,6 +469,26 @@ export default function DayPlannerView() {
 
       {managingShapes && (
         <DayShapeEditModal dayShapes={dayShapes} onAdd={addDayShape} onUpdate={updateDayShape} onRemove={removeDayShape} onClose={() => setManagingShapes(false)} />
+      )}
+
+      {planningDay && (
+        <PlanDayModal
+          dateLabel={dayLabel}
+          habits={habits}
+          tasks={tasks}
+          plannedHabitIds={planned.habitIds}
+          plannedTaskIds={planned.taskIds}
+          dueTaskIds={dueTaskIds}
+          extraBlocks={extraBlocks}
+          onPlanHabit={(id) => planHabit(selectedISO, id)}
+          onUnplanHabit={(id) => unplanHabit(selectedISO, id)}
+          onPlanTask={(id) => planTask(selectedISO, id)}
+          onUnplanTask={(id) => unplanTask(selectedISO, id)}
+          onAddBlock={(block) => addExtraBlockForDate(selectedISO, block)}
+          onUpdateBlock={(id, patch) => updateExtraBlockForDate(selectedISO, id, patch)}
+          onRemoveBlock={(id) => removeExtraBlockForDate(selectedISO, id)}
+          onClose={() => setPlanningDay(false)}
+        />
       )}
     </div>
   );
