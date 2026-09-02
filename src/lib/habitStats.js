@@ -31,6 +31,17 @@ export function habitStats(timestamps, now = Date.now()) {
   return { count, lastTs, last7, last30, avgGapDays };
 }
 
+// Most recent timestamp among entries tagged with `tagId`, or null if that
+// tag has never been logged. `entries` are full HabitEntry objects (needs
+// tagIds, not just the ts list `habitStats` takes).
+export function lastUsedByTag(entries, tagId) {
+  let last = null;
+  for (const e of entries) {
+    if ((e.tagIds || []).includes(tagId) && (last === null || e.ts > last)) last = e.ts;
+  }
+  return last;
+}
+
 // GitHub-style contribution grid: `weeks` columns of 7 days (Mon..Sun),
 // ending on the current week, each day carrying how many entries landed on
 // it (bucketed in local time, same as the rest of the date helpers).

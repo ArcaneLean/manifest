@@ -1,10 +1,19 @@
 import { useState } from "react";
-import { X, Flame, Trash2, Clock } from "lucide-react";
-import { COLORS } from "../theme/colors.js";
+import { X, Flame, Trash2, Clock, Plus } from "lucide-react";
+import { COLORS, TAG_PALETTE } from "../theme/colors.js";
 import { Toggle } from "./Toggle.jsx";
 import { HabitHeatmap } from "./HabitHeatmap.jsx";
-import { habitStats, formatRelativeTime } from "../lib/habitStats.js";
+import { TagChip, TagPickerChip } from "./TagChip.jsx";
+import { habitStats, lastUsedByTag, formatRelativeTime } from "../lib/habitStats.js";
 import { startOfToday } from "../lib/dateUtils.js";
+
+// Habit sub-tags (e.g. "hair"/"body" on a Shower habit) don't store their
+// own color — they're scoped to one habit and cheap to define, so we just
+// cycle the shared TAG_PALETTE by position instead of plumbing full Tag
+// entities through. `tagWithColor` attaches that color for chip rendering.
+function tagWithColor(tag, index) {
+  return { ...tag, color: TAG_PALETTE[index % TAG_PALETTE.length] };
+}
 
 const fieldStyle = {
   background: "transparent",
@@ -33,12 +42,15 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
   const [backfillDate, setBackfillDate] = useState("");
   const [backfillTime, setBackfillTime] = useState("");
   const [estimatedMinutes, setEstimatedMinutes] = useState(habit.estimatedMinutes ?? "");
+  const [tagDraft, setTagDraft] = useState("");
+  const [selectedTagIds, setSelectedTagIds] = useState([]);
 
   const timestamps = entries.map((e) => e.ts);
   const stats = habitStats(timestamps, now);
   const color = habit.type === "negative" ? COLORS.danger : COLORS.sage;
   const today = startOfToday();
   const recent = [...entries].sort((a, b) => b.ts - a.ts).slice(0, 8);
+  const tags = habit.tags || [];
 
   const commitName = () => {
     const trimmed = name.trim();
@@ -51,13 +63,35 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
     if (v !== (habit.estimatedMinutes ?? null)) onRename({ estimatedMinutes: v });
   };
 
+  const addTag = () => {
+    const trimmed = tagDraft.trim();
+    if (!trimmed) return;
+    onRename({ tags: [...tags, { id: crypto.randomUUID(), name: trimmed }] });
+    setTagDraft("");
+  };
+
+  const removeTag = (tagId) => {
+    onRename({ tags: tags.filter((t) => t.id !== tagId) });
+    setSelectedTagIds((prev) => prev.filter((id) => id !== tagId));
+  };
+
+  const toggleTagSelection = (tagId) => {
+    setSelectedTagIds((prev) => (prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]));
+  };
+
+  const commitLog = () => {
+    onLog(selectedTagIds);
+    setSelectedTagIds([]);
+  };
+
   const commitBackfill = () => {
     if (!backfillDate) return;
     const [y, m, d] = backfillDate.split("-").map(Number);
     const [hh, mm] = (backfillTime || "12:00").split(":").map(Number);
-    onBackfill(new Date(y, m - 1, d, hh, mm).getTime());
+    onBackfill(new Date(y, m - 1, d, hh, mm).getTime(), selectedTagIds);
     setBackfillDate("");
     setBackfillTime("");
+    setSelectedTagIds([]);
   };
 
   return (
@@ -148,20 +182,96 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
         </div>
         <div style={{ fontSize: "10px", color: COLORS.dim, marginTop: "-10px", marginBottom: "16px" }}>for today's plan, if tracked</div>
 
-        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "6px" }}>tags</div>
+          {tags.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+              {tags.map((tag, i) => (
+                <span key={tag.id} style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <TagChip tag={tagWithColor(tag, i)} small />
+                  <span onClick={() => removeTag(tag.id)} style={{ cursor: "pointer", display: "flex" }} aria-label={`Remove tag ${tag.name}`}>
+                    <X size={9} color={COLORS.dim} />
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: "6px" }}>
+            <input
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addTag();
+              }}
+              placeholder="add tag, e.g. hair"
+              style={{ ...fieldStyle, flex: 1, minWidth: 0, border: `1px solid ${COLORS.border}`, borderRadius: "6px", fontSize: "12px", padding: "7px 8px" }}
+            />
+            <button
+              onClick={addTag}
+              disabled={!tagDraft.trim()}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "none",
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: "6px",
+                color: tagDraft.trim() ? COLORS.dim : COLORS.border,
+                padding: "0 10px",
+                cursor: tagDraft.trim() ? "pointer" : "default",
+                flexShrink: 0,
+              }}
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", marginBottom: tags.length > 0 ? "8px" : "16px" }}>
           <StatTile label="last" value={formatRelativeTime(stats.lastTs, now)} />
           <StatTile label="last 7d" value={String(stats.last7)} />
           <StatTile label="last 30d" value={String(stats.last30)} />
           <StatTile label="avg gap" value={stats.avgGapDays != null ? `${stats.avgGapDays.toFixed(1)}d` : "—"} />
         </div>
 
+        {tags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
+            {tags.map((tag, i) => {
+              const t = tagWithColor(tag, i);
+              return (
+                <div
+                  key={tag.id}
+                  style={{ display: "flex", alignItems: "center", gap: "5px", border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "4px 8px" }}
+                >
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: t.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: "10.5px", color: COLORS.dim }}>{t.name}:</span>
+                  <span style={{ fontSize: "10.5px", color: COLORS.text }}>{formatRelativeTime(lastUsedByTag(entries, tag.id), now)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "6px" }}>last 52 weeks</div>
         <div style={{ overflowX: "auto", paddingBottom: "6px", marginBottom: "16px" }}>
           <HabitHeatmap timestamps={timestamps} weeks={52} today={today} color={color} cellSize={11} gap={3} />
         </div>
 
+        {tags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+            {tags.map((tag, i) => (
+              <TagPickerChip
+                key={tag.id}
+                tag={tagWithColor(tag, i)}
+                active={selectedTagIds.includes(tag.id)}
+                onClick={() => toggleTagSelection(tag.id)}
+              />
+            ))}
+          </div>
+        )}
+
         <button
-          onClick={onLog}
+          onClick={commitLog}
           style={{
             width: "100%",
             display: "flex",
@@ -213,19 +323,34 @@ export function HabitDetailModal({ habit, entries, now, onLog, onBackfill, onRem
         {recent.length === 0 && (
           <div style={{ color: COLORS.dim, fontSize: "12.5px", padding: "8px 0" }}>// no logs yet</div>
         )}
-        {recent.map((e) => (
-          <div
-            key={e.id}
-            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}
-          >
-            <span style={{ fontSize: "12.5px", color: COLORS.text }}>
-              {new Date(e.ts).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-            </span>
-            <span onClick={() => onRemoveEntry(e.id)} style={{ cursor: "pointer" }} aria-label="Remove log">
-              <X size={12} color={COLORS.dim} />
-            </span>
-          </div>
-        ))}
+        {recent.map((e) => {
+          const entryTags = (e.tagIds || []).map((tagId) => {
+            const i = tags.findIndex((t) => t.id === tagId);
+            return i === -1 ? null : tagWithColor(tags[i], i);
+          }).filter(Boolean);
+          return (
+            <div
+              key={e.id}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${COLORS.border}`, gap: "8px" }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
+                <span style={{ fontSize: "12.5px", color: COLORS.text }}>
+                  {new Date(e.ts).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </span>
+                {entryTags.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                    {entryTags.map((tag) => (
+                      <TagChip key={tag.id} tag={tag} small />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span onClick={() => onRemoveEntry(e.id)} style={{ cursor: "pointer", flexShrink: 0 }} aria-label="Remove log">
+                <X size={12} color={COLORS.dim} />
+              </span>
+            </div>
+          );
+        })}
 
         <button
           onClick={onDelete}
