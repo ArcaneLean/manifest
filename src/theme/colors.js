@@ -16,8 +16,8 @@ export const COLORS = {
   danger: "#b5453d",
 };
 
-// Applies alpha to one of the hex colors above, e.g. for heatmap intensity
-// levels. `hex` must be a plain "#rrggbb" string (no shorthand/alpha).
+// Applies alpha to one of the hex colors above, e.g. for translucent
+// overlays. `hex` must be a plain "#rrggbb" string (no shorthand/alpha).
 export function withAlpha(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);

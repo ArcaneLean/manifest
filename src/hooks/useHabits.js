@@ -54,9 +54,11 @@ export function useHabits() {
   };
 
   // ts defaults to now (quick-log); pass an explicit epoch ms to backfill a
-  // past occurrence.
-  const logEntry = (habitId, ts = Date.now()) => {
-    const entry = { id: crypto.randomUUID(), habitId, ts };
+  // past occurrence. tagIds are the habit's own sub-tags (e.g. "hair"/"body"
+  // for a Shower habit) selected for this particular occurrence — empty by
+  // default for a plain quick-log.
+  const logEntry = (habitId, ts = Date.now(), tagIds = []) => {
+    const entry = { id: crypto.randomUUID(), habitId, ts, tagIds };
     setEntries((prev) => [...prev, entry]);
     putHabitEntry(entry);
     return entry;

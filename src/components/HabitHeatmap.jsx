@@ -1,17 +1,17 @@
-import { COLORS, withAlpha } from "../theme/colors.js";
+import { COLORS } from "../theme/colors.js";
 import { buildHeatmapGrid } from "../lib/habitStats.js";
 
-const INTENSITY_ALPHAS = [0.28, 0.5, 0.72, 1];
-
+// Solid fill for a logged day, dim border color for an empty one. Habits are
+// realistically logged at most once/day, so a count-based alpha ramp left
+// nearly every filled cell at its dimmest tier — a flat boolean fill reads
+// far more clearly on the dark panel background.
 function cellColor(count, color) {
-  if (count <= 0) return COLORS.border;
-  const level = Math.min(INTENSITY_ALPHAS.length, count) - 1;
-  return withAlpha(color, INTENSITY_ALPHAS[level]);
+  return count > 0 ? color : COLORS.border;
 }
 
-// GitHub-style contribution grid — `weeks` columns of 7 day-cells, shaded by
-// how many entries landed on that day. `color` picks the intensity ramp
-// (sage for positive habits, danger for negative ones).
+// GitHub-style contribution grid — `weeks` columns of 7 day-cells, filled
+// solid on days with at least one entry. `color` picks the fill color (sage
+// for positive habits, danger for negative ones).
 export function HabitHeatmap({ timestamps, weeks, today, color = COLORS.sage, cellSize = 9, gap = 2 }) {
   const columns = buildHeatmapGrid(timestamps, weeks, today);
 

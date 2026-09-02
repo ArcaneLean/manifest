@@ -237,8 +237,8 @@ export default function HabitsView() {
           habit={selected.habit}
           entries={selected.entries}
           now={now.getTime()}
-          onLog={() => logEntry(selected.habit.id)}
-          onBackfill={(ts) => logEntry(selected.habit.id, ts)}
+          onLog={(tagIds) => logEntry(selected.habit.id, Date.now(), tagIds)}
+          onBackfill={(ts, tagIds) => logEntry(selected.habit.id, ts, tagIds)}
           onRemoveEntry={removeEntry}
           onRename={(patch) => updateHabit(selected.habit.id, patch)}
           onDelete={() => {
