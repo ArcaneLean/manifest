@@ -134,6 +134,41 @@ function NowDivider({ nowMin }) {
   );
 }
 
+// Wraps whichever row `now` actually falls inside (its [startMin, endMin)
+// span) and overlays the now-marker at the proportional position within
+// that row, rather than always dropping it as a separate line *between*
+// rows — a plain between-rows divider has no row to sit before once the
+// current time is mid-block (e.g. 18:07 during an 18:00-19:00 dinner), and
+// previously landed after the block entirely (see NowDivider's other call
+// site, which still handles the gap/before-first/after-last cases).
+function CurrentRowMarker({ fraction, nowMin, children }) {
+  return (
+    <div style={{ position: "relative" }}>
+      {children}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: `${Math.min(100, Math.max(0, fraction * 100))}%`,
+          transform: "translateY(-1px)",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "0 20px",
+          pointerEvents: "none",
+        }}
+      >
+        <div style={{ flex: 1, height: "1px", background: COLORS.amber, boxShadow: `0 0 6px ${COLORS.amber}` }} />
+        <span style={{ fontSize: "9px", color: COLORS.amber, letterSpacing: "0.5px", textShadow: `0 0 6px ${COLORS.amberDim}`, background: COLORS.bg, padding: "0 4px" }}>
+          now · {minutesToClock(nowMin)}
+        </span>
+        <div style={{ flex: 1, height: "1px", background: COLORS.amber, boxShadow: `0 0 6px ${COLORS.amber}` }} />
+      </div>
+    </div>
+  );
+}
+
 function OverflowRow({ item, squeezed, onSqueeze, onDefer, deferLabel, onUnplan, onMoveUp, onMoveDown }) {
   const isHabit = item.kind === "habit";
   const stripe = isHabit ? COLORS.sage : item.quadrant.color;
@@ -186,7 +221,7 @@ export default function DayPlannerView() {
     extraBlocksForDate,
     loading: shapesLoading,
   } = useDayShapes();
-  const { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, moveHabit, moveTask, loading: plannedLoading } = useDayPlanItems();
+  const { plannedForDate, planHabit, unplanHabit, planTask, unplanTask, moveItem, loading: plannedLoading } = useDayPlanItems();
   const gcal = useGoogleCalendar();
   const [squeezeIds, setSqueezeIds] = useState(new Set());
   const [managingShapes, setManagingShapes] = useState(false);
@@ -215,16 +250,18 @@ export default function DayPlannerView() {
   // explicitly planned for this date show up at all.
   const dueTaskIds = new Set(tasks.filter((t) => isTaskForDate(t, selectedISO, dayStartMs, dayEndMs)).map((t) => t.id));
   const tasksForDay = tasks.filter((t) => dueTaskIds.has(t.id) || planned.taskIds.includes(t.id));
-  // Built by walking `planned.habitIds` (the dayplans row's own order, also
-  // this list's manual reorder sequence — see moveHabit) rather than
-  // `habits`' own array, so habitItems in buildDayPlan schedules them in
-  // the order the user actually arranged, not habit-creation order.
-  const habitsForPlan = planned.habitIds
-    .map((id) => habits.find((h) => h.id === id))
+  // Built by walking `planned.itemOrder` (the dayplans row's combined,
+  // interleavable habit+task sequence, also this list's manual reorder
+  // order — see moveItem) rather than `habits`' own array, so habitItems in
+  // buildDayPlan schedules them in the order the user actually arranged,
+  // not habit-creation order.
+  const habitsForPlan = planned.itemOrder
+    .filter((e) => e.type === "habit")
+    .map((e) => habits.find((h) => h.id === e.id))
     .filter((h) => h && h.type !== "negative")
     .map((h) => ({ id: h.id, name: h.name, estimatedMinutes: h.estimatedMinutes || 0, done: isHabitLoggedOnDate(entries, h.id, dayStartMs, dayEndMs) }));
 
-  const plan = buildDayPlan({ wakeMinutes, blocks: blocksForDay, tasks: tasksForDay, habits: habitsForPlan, squeezeIds, taskOrder: planned.taskIds });
+  const plan = buildDayPlan({ wakeMinutes, blocks: blocksForDay, tasks: tasksForDay, habits: habitsForPlan, squeezeIds, itemOrder: planned.itemOrder });
 
   const gcalForDay = gcal.events.map((e) => gcalBlockForDate(e, selectedISO)).filter(Boolean);
   const timedGcal = gcalForDay.filter((g) => !g.allDay);
@@ -235,7 +272,12 @@ export default function DayPlannerView() {
 
   const merged = [...plan.fixed, ...timedGcal, ...timedItems].sort((a, b) => a.startMin - b.startMin);
   const nowMin = nowMinutes(now);
-  let dividerInserted = !isToday;
+  // If `now` falls inside a row's own [startMin, endMin) span, that row
+  // gets an inline marker (see CurrentRowMarker) instead of the plain
+  // between-rows divider — the between-rows divider only handles `now`
+  // landing in a genuine gap, or before the first / after the last row.
+  const currentRowIndex = isToday ? merged.findIndex((row) => row.startMin <= nowMin && nowMin < row.endMin) : -1;
+  let dividerInserted = !isToday || currentRowIndex !== -1;
 
   const toggleSqueeze = (kind, id) => {
     setSqueezeIds((prev) => {
@@ -279,19 +321,20 @@ export default function DayPlannerView() {
   const isPlanned = (row) => (row.kind === "habit" ? planned.habitIds.includes(row.id) : planned.taskIds.includes(row.id));
 
   // Reorder controls only make sense for items with a manual position to
-  // move within — i.e. explicitly planned habits/tasks (see moveHabit/
-  // moveTask) — so a due-but-unplanned task or a fixed/gcal block gets
-  // `undefined` here, which ItemRow/OverflowRow read as "no control at all"
-  // rather than a disabled one.
+  // move within — i.e. explicitly planned habits/tasks (see moveItem) — so
+  // a due-but-unplanned task or a fixed/gcal block gets `undefined` here,
+  // which ItemRow/OverflowRow read as "no control at all" rather than a
+  // disabled one. `idx`/bounds are computed against the single combined
+  // `itemOrder`, not a per-type subset, so a habit's up/down can swap it
+  // past a neighboring task and vice versa.
   const reorderProps = (row) => {
-    const ids = row.kind === "habit" ? planned.habitIds : row.kind === "task" ? planned.taskIds : null;
-    if (!ids) return {};
-    const idx = ids.indexOf(row.id);
+    if (row.kind !== "habit" && row.kind !== "task") return {};
+    const order = planned.itemOrder;
+    const idx = order.findIndex((e) => e.type === row.kind && e.id === row.id);
     if (idx === -1) return {};
-    const mover = row.kind === "habit" ? moveHabit : moveTask;
     return {
-      onMoveUp: idx > 0 ? () => mover(selectedISO, row.id, -1) : null,
-      onMoveDown: idx < ids.length - 1 ? () => mover(selectedISO, row.id, 1) : null,
+      onMoveUp: idx > 0 ? () => moveItem(selectedISO, row.kind, row.id, -1) : null,
+      onMoveDown: idx < order.length - 1 ? () => moveItem(selectedISO, row.kind, row.id, 1) : null,
     };
   };
 
@@ -469,13 +512,21 @@ export default function DayPlannerView() {
                 {...reorderProps(row)}
               />
             );
+          const wrapped =
+            i === currentRowIndex ? (
+              <CurrentRowMarker key={`wrap-${i}`} fraction={(nowMin - row.startMin) / (row.endMin - row.startMin)} nowMin={nowMin}>
+                {el}
+              </CurrentRowMarker>
+            ) : (
+              el
+            );
           return showDivider ? (
             <div key={`wrap-${i}`}>
               <NowDivider nowMin={nowMin} />
-              {el}
+              {wrapped}
             </div>
           ) : (
-            el
+            wrapped
           );
         })}
         {isToday && !dividerInserted && merged.length > 0 && <NowDivider nowMin={nowMin} />}

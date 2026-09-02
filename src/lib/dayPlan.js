@@ -108,7 +108,7 @@ export function resolveBlocks(wakeMinutes, blockDefs) {
 // unpersisted override that forces an overflow item onto the plan anyway
 // (see the Today view's "squeeze in" action), on top of the normal fill
 // rather than competing with it for space.
-export function buildDayPlan({ wakeMinutes = DAY_START_MIN, blocks = [], tasks, habits, squeezeIds = new Set(), taskOrder = [] }) {
+export function buildDayPlan({ wakeMinutes = DAY_START_MIN, blocks = [], tasks, habits, squeezeIds = new Set(), itemOrder = [] }) {
   const fixed = resolveBlocks(wakeMinutes, blocks)
     .map((b) => ({ kind: "fixed", label: b.label, anchor: b.anchor, startMin: b.startMin, endMin: b.endMin }))
     .filter((b) => b.endMin > wakeMinutes && b.startMin < DAY_END_MIN)
@@ -141,22 +141,23 @@ export function buildDayPlan({ wakeMinutes = DAY_START_MIN, blocks = [], tasks, 
     done: t.done,
     quadrant: QUADRANTS[quadrantFor(t.urgent, t.important)],
   }));
-  // Tasks explicitly planned for the day (present in `taskOrder`, the
-  // dayplans row's `taskIds` array — see useDayPlanItems.js) get a real,
-  // user-controlled sequence via the timeline's up/down reorder controls,
-  // overriding quadrant priority within that opted-in set. A task that's
-  // only on the plan because it's due today (not explicitly planned) has
-  // no position in `taskOrder` and falls back to quadrant-rank order,
-  // after every manually-ordered task.
-  const orderIndex = new Map(taskOrder.map((id, i) => [id, i]));
-  taskItems.sort((a, b) => {
-    const ao = orderIndex.has(a.id) ? orderIndex.get(a.id) : Infinity;
-    const bo = orderIndex.has(b.id) ? orderIndex.get(b.id) : Infinity;
+  // `itemOrder` is the dayplans row's single combined sequence of
+  // {type, id} entries across *both* habits and tasks (see
+  // useDayPlanItems.js's moveItem) — this is what lets the timeline's
+  // up/down reorder controls interleave a habit and a task instead of
+  // keeping them in separate type-grouped blocks. Every explicitly planned
+  // item (habit or task) has a position here; a task that's only on the
+  // plan because it's due today (not explicitly planned) has no position
+  // and falls back to quadrant-rank order, after every manually-ordered
+  // item.
+  const orderIndex = new Map(itemOrder.map((entry, i) => [`${entry.type}:${entry.id}`, i]));
+  const orderOf = (item) => (orderIndex.has(`${item.kind}:${item.id}`) ? orderIndex.get(`${item.kind}:${item.id}`) : Infinity);
+  const items = [...habitItems, ...taskItems].sort((a, b) => {
+    const ao = orderOf(a);
+    const bo = orderOf(b);
     if (ao !== bo) return ao - bo;
-    return a.quadrant.rank - b.quadrant.rank;
+    return (a.quadrant?.rank ?? 0) - (b.quadrant?.rank ?? 0);
   });
-
-  const items = [...habitItems, ...taskItems];
   const key = (i) => `${i.kind}:${i.id}`;
   const doneItems = items.filter((i) => i.done);
   const openItems = items.filter((i) => !i.done);
