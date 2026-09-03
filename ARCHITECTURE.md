@@ -220,11 +220,30 @@ These came up in the process and were deliberately deferred — listed here so t
     account (removed, unsubscribed, access revoked) have their cached events and meta dropped on
     the next sync.
   - **Rendering**: `CalendarView.jsx` renders gcal events as a third, read-only occurrence type
-    alongside real tasks and virtual recurring occurrences — solid steel-blue left border
-    (`GCAL_COLOR`, deliberately outside both the quadrant and `TAG_PALETTE` color families, same
-    reasoning as §3's tag/priority split), no checkbox/edit/delete, tapping opens the event on
-    calendar.google.com. `datesForGCalEvent` expands one event into every local day it touches
-    (all-day spans use Google's exclusive `end.date`; timed events use local day boundaries).
+    alongside real tasks and virtual recurring occurrences — no checkbox/edit/delete, tapping
+    opens the event on calendar.google.com. `datesForGCalEvent` expands one event into every local
+    day it touches (all-day spans use Google's exclusive `end.date`; timed events use local day
+    boundaries).
+  - **Per-calendar color + show/hide**: since one account can sync several calendars, each event's
+    left border/label is colored per its own `calendarId` rather than one flat color, and the
+    label names the calendar itself (`calendarSummary`) instead of a generic "google calendar" —
+    the point being to tell calendars apart, not just flag "this came from gcal". Colors and a
+    `hidden` flag live in a new `calendarSettings` IndexedDB store (`DB_VERSION` 7,
+    `src/lib/calendarSettingsRepo.js`), one row per calendar keyed by `calendarId` like `gcalMeta`.
+    Unlike `gcalEvents`/`gcalMeta`, this is a user choice, not a rebuildable cache, so it's a plain
+    `ensureStore` rather than recreated on a version bump. `syncGoogleCalendar` keeps it in sync
+    with the account's calendar list: a newly-discovered calendar gets a default color cycling
+    through `TAG_PALETTE` by discovery order and starts visible, an already-known one keeps its
+    color/hidden choice but picks up a renamed summary, and a calendar that disappears from the
+    account has its settings row dropped alongside its events/meta. `useCalendarSettings.js`
+    exposes `colorFor`/`isHidden` lookups (falling back to a steel-blue default before a
+    calendar's row exists) plus `setColor`/`setHidden`; `CalendarView.jsx` filters `gcal.events` by
+    `isHidden` before building the per-day event map, so a hidden calendar's events don't appear
+    anywhere (list/week/month rows or month-grid dots). `ManageCalendarsModal.jsx` (opened from a
+    gear icon next to the connect button, shown once connected) lists every synced calendar with
+    its color dot (tap to open a `ColorPicker` — the same `TAG_PALETTE` swatch picker `TagsView`
+    uses for tags, factored out to `src/components/ColorPicker.jsx`) and an eye/eye-off toggle for
+    `hidden`; there's no add/remove here since the calendar list itself is owned by Google.
   - **Setup required per deployment**: needs a Google Cloud OAuth client ID (not secret, but
     project-specific — see `.env.example`) with the dev and deployed origins authorized; wired
     into the GitHub Pages build via a `VITE_GOOGLE_CLIENT_ID` repo variable

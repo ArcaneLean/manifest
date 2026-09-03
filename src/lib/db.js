@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 let dbPromise = null;
 
@@ -45,6 +45,12 @@ export function getDB() {
         if (db.objectStoreNames.contains("gcalMeta")) db.deleteObjectStore("gcalMeta");
         db.createObjectStore("gcalEvents", { keyPath: "key" });
         db.createObjectStore("gcalMeta", { keyPath: "calendarId" });
+        // v7: per-calendar display prefs (color, hidden) — one row per
+        // calendar, keyed by calendarId like gcalMeta. Kept in sync with the
+        // account's calendar list by googleCalendarSync.js; unlike gcalMeta
+        // this is a user choice, not a rebuildable cache, so it's a plain
+        // ensureStore rather than recreated on every version bump.
+        ensureStore(db, "calendarSettings", { keyPath: "calendarId" });
         // Day Planner app — see ARCHITECTURE.md §7 ("Day Planner"). A
         // DayShape is a named set of blocks (commute, work, routines);
         // `dayoverrides` holds at most one row per date, only when that

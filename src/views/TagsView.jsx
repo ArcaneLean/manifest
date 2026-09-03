@@ -5,28 +5,7 @@ import { useClock } from "../hooks/useClock.js";
 import { useTags } from "../hooks/useTags.js";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
-
-function ColorPicker({ value, onChange }) {
-  return (
-    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-      {TAG_PALETTE.map((c) => (
-        <span
-          key={c}
-          onClick={() => onChange(c)}
-          style={{
-            width: "24px",
-            height: "24px",
-            borderRadius: "50%",
-            background: c,
-            cursor: "pointer",
-            border: value === c ? `2px solid ${COLORS.text}` : "2px solid transparent",
-            boxShadow: value === c ? `0 0 0 2px ${COLORS.bg}` : "none",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+import { ColorPicker } from "../components/ColorPicker.jsx";
 
 function TagForm({ name, setName, color, setColor, onSave, onCancel, onDelete, inputRef }) {
   return (
