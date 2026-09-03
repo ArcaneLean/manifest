@@ -7,6 +7,8 @@ import {
   putGCalMeta,
   deleteGCalMeta,
 } from "./gcalRepo.js";
+import { listCalendarSettings, putCalendarSettings, deleteCalendarSettings } from "./calendarSettingsRepo.js";
+import { TAG_PALETTE } from "../theme/colors.js";
 
 // Read-only sync against every calendar on the signed-in account — see
 // ARCHITECTURE.md §7 ("Google Calendar integration"). Uses incremental sync
@@ -115,12 +117,37 @@ export async function syncGoogleCalendar(accessToken) {
   const calendars = await fetchAllCalendars(accessToken);
   const seenIds = new Set(calendars.map((c) => c.id));
 
-  // Drop cached events/meta for calendars no longer on the account (removed,
-  // unsubscribed from, or access revoked).
+  // Drop cached events/meta/settings for calendars no longer on the account
+  // (removed, unsubscribed from, or access revoked).
   for (const meta of await listGCalMeta()) {
     if (!seenIds.has(meta.calendarId)) {
       await deleteGCalEventsForCalendar(meta.calendarId);
       await deleteGCalMeta(meta.calendarId);
+    }
+  }
+  const existingSettings = await listCalendarSettings();
+  const settingsById = new Map(existingSettings.map((s) => [s.calendarId, s]));
+  for (const settings of existingSettings) {
+    if (!seenIds.has(settings.calendarId)) await deleteCalendarSettings(settings.calendarId);
+  }
+
+  // Keep per-calendar display prefs in sync with the account's calendar
+  // list: a newly-seen calendar gets a default color (cycling through
+  // TAG_PALETTE by discovery order) and starts visible; an already-known
+  // one keeps its color/hidden choice but picks up a renamed summary.
+  for (const [index, calendar] of calendars.entries()) {
+    const existing = settingsById.get(calendar.id);
+    if (existing) {
+      if (existing.calendarSummary !== calendar.summary) {
+        await putCalendarSettings({ ...existing, calendarSummary: calendar.summary });
+      }
+    } else {
+      await putCalendarSettings({
+        calendarId: calendar.id,
+        calendarSummary: calendar.summary,
+        color: TAG_PALETTE[index % TAG_PALETTE.length],
+        hidden: false,
+      });
     }
   }
 
