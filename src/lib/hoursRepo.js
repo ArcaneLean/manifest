@@ -15,14 +15,3 @@ export async function deleteWorklogEntry(date) {
   const db = await getDB();
   await db.delete("worklog", date);
 }
-
-export async function listWeekTargets() {
-  const db = await getDB();
-  return db.getAll("weektargets");
-}
-
-export async function putWeekTarget(target) {
-  const db = await getDB();
-  await db.put("weektargets", target);
-  return target;
-}
