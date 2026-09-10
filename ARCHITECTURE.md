@@ -135,6 +135,8 @@ each app owns its own internal navigation and is otherwise independent.
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
 | Hours | Hours | none (single view) | clock in/out, worklog-derived running flex-time balance |
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
+| Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
+| Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
 | *(not built)* | — | — | settings — see §7 |
 
 | View | Reads | Writes | Notes |
@@ -448,6 +450,35 @@ These came up in the process and were deliberately deferred — listed here so t
     configured. **Still open**: an optional due-offset on the template (e.g. "+3 days") would
     cover cases like a weekly timesheet (instantiated Monday, due Friday) when `dateField` is
     "both".
+
+- **Shortlist (implemented)**: a triage app over non-done tasks and all habits — three buckets,
+  `wont` / `could` / `want`, with `could` as the default. Deliberately a pure overlay (like Matrix
+  over tasks): one IndexedDB row (`shortlist` store, `src/lib/shortlistRepo.js`) holding three
+  ordered arrays of compound ids (`"task:<id>"` / `"habit:<id>"`) — same ordered-id-array shape as
+  `dayplans`' `habitIds`/`taskIds`, so manual drag-reorder within a bucket is just an array
+  position. No task/habit fields are duplicated; only which bucket an item is in and its rank
+  within it.
+  - **Self-heal on load** (`useShortlist.js`): any in-scope item (non-done task, any habit) missing
+    from all three arrays is appended to `could` — this is how newly created tasks/habits get
+    "imported" with no manual step. Any id no longer backed by a live item (task completed or
+    deleted, habit deleted) is dropped from whichever array holds it. Completed tasks drop out of
+    scope entirely rather than staying visible in whatever bucket they were last triaged into.
+  - **Movement is stepwise, not a direct jump**: buckets sit on a fixed line, `wont ← could →
+    want`. Each row shows only the button(s) pointing toward a bucket that exists — `could` shows
+    both ✕ (→ `wont`) and ✓ (→ `want`); `wont` shows only ✓ (→ `could`); `want` shows only ✕ (→
+    `could`). A move appends the item to the end of the destination bucket.
+  - **Reset**: sets every item back to `could`, behind a confirm dialog (`ConfirmDialog.jsx`) since
+    it touches everything at once and can't be undone. Ordering after reset is `[...could,
+    ...want, ...wont]` — items already in `could` keep their relative position, since most of them
+    aren't moving.
+  - **Drag reorder**: pointer-events based (not native HTML5 drag-and-drop, which doesn't fire
+    reliably on touch/Android — see §1 "Android-first"), implemented directly in
+    `ShortlistView.jsx`. A drag handle tracks `pointermove`, compares the pointer's Y position
+    against each row's midpoint to find the hover index, and live-reorders local state; the final
+    order is persisted to `shortlistRepo` on `pointerup`.
+  - **Not a Task Manager tab**: unlike Matrix/Templates/Tags (all lenses over the task+template
+    store only), Shortlist also covers habits, so it's its own top-level launcher app rather than
+    a 5th Task Manager tab.
 
 ## 8. Suggested build order for Claude Code
 
