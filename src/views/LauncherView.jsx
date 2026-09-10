@@ -9,7 +9,7 @@ const APPS = [
     label: "task manager",
     path: "~/tasks",
     icon: ListChecks,
-    desc: "tasks · matrix · calendar · templates · tags",
+    desc: "tasks · templates · recurring · tags",
   },
   { key: "countdowns", label: "countdowns", path: "~/countdowns", icon: Hourglass, desc: "days until" },
   { key: "hours", label: "hours", path: "~/hours", icon: Clock, desc: "work log" },
