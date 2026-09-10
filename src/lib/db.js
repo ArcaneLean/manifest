@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 let dbPromise = null;
 
@@ -26,7 +26,10 @@ export function getDB() {
         ensureStore(db, "templates", { keyPath: "id" });
         ensureStore(db, "countdowns", { keyPath: "id" });
         ensureStore(db, "worklog", { keyPath: "date" });
-        ensureStore(db, "weektargets", { keyPath: "weekStartISO" });
+        // v8: Hours reworked from a per-week target into a running flex-time
+        // balance derived from worklog entries directly (see
+        // ARCHITECTURE.md §4/§5) — weektargets is no longer read or written.
+        if (db.objectStoreNames.contains("weektargets")) db.deleteObjectStore("weektargets");
         // Habits app — see ARCHITECTURE.md §5. `habits` holds the tracked
         // habit itself (name, positive/negative); `habitEntries` is the
         // event log (one row per time it was done), which both "last done"

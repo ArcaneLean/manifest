@@ -98,17 +98,19 @@ interface Countdown {
 }
 
 interface WorkLogEntry {
-  date: string;                // ISO, one entry per day (single session — see §7 open items)
-  start: string;                // "HH:MM"
-  end: string;
+  date: string;                 // ISO, one entry per day (single session — see §7 open items)
+  start: string;                 // "HH:MM"
+  end: string | null;            // null while clocked in, not yet clocked out
   breakMin: number;
 }
-
-interface WeekTarget {
-  weekStartISO: string;        // Monday of that week
-  targetHours: number;         // default 40 if absent
-}
 ```
+
+Hours has no per-week target store anymore — the running balance is derived at render
+time from `worklog` directly: `sum((workedMinutes(entry) - normalDayMin))` over every
+*completed* entry (`start` and `end` both set; an open, clocked-in-only entry doesn't
+count yet). `normalDayMin` is a single persisted setting (`normalDayHours`, default 8.5),
+not per-week data, so it lives in `localStorage` via `usePersistentState` rather than
+IndexedDB — see §5.
 
 Quadrant derivation (shared helper, currently duplicated in 3 files):
 
@@ -131,7 +133,7 @@ each app owns its own internal navigation and is otherwise independent.
 |---|---|---|---|
 | Task manager | Tasks, Matrix, Calendar, Templates, Tags | bottom tab bar (5 tabs) | all 5 are lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than five launcher tiles |
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
-| Hours | Hours | none (single view) | worklog + per-week configurable target |
+| Hours | Hours | none (single view) | clock in/out, worklog-derived running flex-time balance |
 | Day Planner | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7 |
 | *(not built)* | — | — | settings — see §7 |
 
@@ -143,7 +145,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Calendar | tasks, templates, tags | tasks | list (infinite scroll, forward-only)/week/month toggle; also projects recurring templates' future occurrences (virtual, unpersisted) — see §7 |
 | Templates | templates, tasks, tags | tasks (on run, and the recurring anchor lifecycle), templates | single-task presets, optional recurrence |
 | Tags | tags | tags | CRUD, 8-color curated palette |
-| Hours | worklog, weektargets | worklog, weektargets | per-week configurable target |
+| Hours | worklog | worklog | clock in/out; balance vs. `normalDayHours` (localStorage) derived at render time |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -375,8 +377,15 @@ These came up in the process and were deliberately deferred — listed here so t
     something done only makes sense while viewing today — the checkbox is read-only (dimmed, no
     click handler) when browsing a different day, even though the rest of the plan (fixed blocks,
     scheduled items, overflow, squeeze/defer) stays fully interactive on any date.
-- **Work hours**: single session per day only (no split days). No export needed (confirmed).
-  Weekly target is configurable per-week, defaulting to 40h.
+- **Work hours (reworked)**: single session per day only (no split days). No export needed
+  (confirmed). Reworked from a per-week target/progress-bar model into a running flex-time
+  **balance**: the primary UI is clock in (log a start time) / clock out (log an end time +
+  break), and each completed day's `worked - normalDayMin` (default 8.5h/day, user-configurable)
+  is folded into a balance shown at the top of the view — carried across weeks, not reset weekly.
+  The week list below it is now secondary: browsing/backfill/correction of individual days via
+  the existing full start/end/break edit panel, which still works on any day including today.
+  `weektargets` (IndexedDB store) was dropped (`db.js` v8) since the balance is derived from
+  `worklog` at render time rather than tracked against a separate per-week figure.
 - **Navigation shell (resolved)**: 7 views was too many for a standard bottom nav (~5 max), and
   the earlier icon-only 7-wide bar (`NavBar.jsx`) was a stopgap, not a real IA decision. Resolved
   by restructuring as an ecosystem: a home/launcher screen (`LauncherView.jsx`) lists three apps

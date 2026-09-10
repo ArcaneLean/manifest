@@ -1,25 +1,20 @@
 import { useEffect, useState } from "react";
-import {
-  listWorklog,
-  putWorklogEntry,
-  deleteWorklogEntry,
-  listWeekTargets,
-  putWeekTarget,
-} from "../lib/hoursRepo.js";
+import { listWorklog, putWorklogEntry, deleteWorklogEntry } from "../lib/hoursRepo.js";
+import { usePersistentState } from "./usePersistentState.js";
+
+const NORMAL_DAY_HOURS_KEY = "manifest.hours.normalDayHours";
+const DEFAULT_NORMAL_DAY_HOURS = 8.5;
 
 export function useHours() {
   const [worklog, setWorklog] = useState({});
-  const [weekTargets, setWeekTargets] = useState({});
   const [loading, setLoading] = useState(true);
+  const [normalDayHours, setNormalDayHours] = usePersistentState(NORMAL_DAY_HOURS_KEY, DEFAULT_NORMAL_DAY_HOURS);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listWorklog(), listWeekTargets()]).then(([entries, targets]) => {
+    listWorklog().then((entries) => {
       if (cancelled) return;
-      const worklogByDate = Object.fromEntries(entries.map((e) => [e.date, e]));
-      const targetsByWeek = Object.fromEntries(targets.map((t) => [t.weekStartISO, t.targetHours]));
-      setWorklog(worklogByDate);
-      setWeekTargets(targetsByWeek);
+      setWorklog(Object.fromEntries(entries.map((e) => [e.date, e])));
       setLoading(false);
     });
     return () => {
@@ -27,7 +22,8 @@ export function useHours() {
     };
   }, []);
 
-  const saveEntry = (date, { start, end, breakMin }) => {
+  // end is null while clocked in (start logged, day not over yet).
+  const saveEntry = (date, { start, end = null, breakMin = 0 }) => {
     const entry = { date, start, end, breakMin };
     setWorklog((prev) => ({ ...prev, [date]: entry }));
     putWorklogEntry(entry);
@@ -42,10 +38,5 @@ export function useHours() {
     deleteWorklogEntry(date);
   };
 
-  const saveWeekTarget = (weekStartISO, targetHours) => {
-    setWeekTargets((prev) => ({ ...prev, [weekStartISO]: targetHours }));
-    putWeekTarget({ weekStartISO, targetHours });
-  };
-
-  return { worklog, weekTargets, loading, saveEntry, clearEntry, saveWeekTarget };
+  return { worklog, loading, saveEntry, clearEntry, normalDayHours, setNormalDayHours };
 }
