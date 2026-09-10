@@ -7,30 +7,47 @@ import { useTasks } from "../hooks/useTasks.js";
 import { useTemplates } from "../hooks/useTemplates.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { Toggle } from "../components/Toggle.jsx";
+import { Segmented } from "../components/Segmented.jsx";
 import { TagPickerChip } from "../components/TagChip.jsx";
 import { TemplateRow } from "../components/TemplateRow.jsx";
 import { TemplateEditModal } from "../components/TemplateEditModal.jsx";
 import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 import { startOfToday } from "../lib/dateUtils.js";
+import { DAY_LABELS } from "../lib/recurrence.js";
 
-// One-off, single-task presets — see ARCHITECTURE.md §5. Recurring
-// templates live in their own view, RecurringView.jsx (split out from this
-// one — see ARCHITECTURE.md §7). Running a template creates a real task in
-// the shared task store.
-export default function TemplatesView() {
+const FREQ_OPTIONS = [
+  { key: "daily", label: "daily" },
+  { key: "weekly", label: "weekly" },
+  { key: "monthly", label: "monthly" },
+];
+
+const DATE_FIELD_OPTIONS = [
+  { key: "due", label: "due date" },
+  { key: "start", label: "start date" },
+  { key: "both", label: "both" },
+];
+
+// Recurring templates, split out of TemplatesView.jsx — see ARCHITECTURE.md
+// §5/§7. Each has exactly one open "anchor" task, instantiated and advanced
+// automatically (ARCHITECTURE.md §7 "Recurring templates on the Calendar"),
+// so rows here show a countdown badge instead of a one-off's "run" button.
+export default function RecurringView() {
   const { tags, loading: tagsLoading } = useTags();
-  const { addTask } = useTasks();
+  const { tasks } = useTasks();
   const { templates, loading: templatesLoading, addTemplate, removeTemplate, updateTemplate } = useTemplates();
-  const [runLog, setRunLog] = useState([]);
   const [building, setBuilding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [textDraft, setTextDraft] = useState("");
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
+  const [draftFreq, setDraftFreq] = useState("daily");
+  const [draftWeekDays, setDraftWeekDays] = useState([0]);
+  const [draftMonthDay, setDraftMonthDay] = useState(1);
+  const [draftDateField, setDraftDateField] = useState("due");
   const [draftTags, setDraftTags] = useState([]);
-  const [filterTags, setFilterTags] = usePersistentState("manifest.templates.filterTags", []);
-  const [groupByTag, setGroupByTag] = usePersistentState("manifest.templates.groupByTag", false);
+  const [filterTags, setFilterTags] = usePersistentState("manifest.recurring.filterTags", []);
+  const [groupByTag, setGroupByTag] = usePersistentState("manifest.recurring.groupByTag", false);
   const textRef = useRef(null);
   const now = useClock();
   const today = startOfToday();
@@ -39,15 +56,19 @@ export default function TemplatesView() {
     if (building && textRef.current) textRef.current.focus();
   }, [building]);
 
-  const oneOffTemplates = templates.filter((t) => !t.recurring);
+  const recurringTemplates = templates.filter((t) => !!t.recurring);
 
   const tagById = (id) => tags.find((t) => t.id === id);
-  const editingTemplate = editingId ? oneOffTemplates.find((t) => t.id === editingId) : null;
+  const editingTemplate = editingId ? recurringTemplates.find((t) => t.id === editingId) : null;
+  // Each open anchor's dueDate/startDate drives the counter badge — see
+  // ARCHITECTURE.md §7.
+  const anchorDate = (templateId) => {
+    const anchor = tasks.find((t) => t.templateId === templateId && !t.done);
+    return anchor?.dueDate || anchor?.startDate || null;
+  };
 
-  const runTemplate = (template) => {
-    const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-    addTask({ text: template.text, urgent: template.urgent, important: template.important, tags: template.tags });
-    setRunLog((prev) => [{ id: crypto.randomUUID(), text: template.text, time }, ...prev].slice(0, 5));
+  const toggleWeekDay = (d) => {
+    setDraftWeekDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
   };
 
   const toggleDraftTag = (id) => {
@@ -63,13 +84,22 @@ export default function TemplatesView() {
     setTextDraft("");
     setDraftUrgent(false);
     setDraftImportant(false);
+    setDraftFreq("daily");
+    setDraftWeekDays([0]);
+    setDraftMonthDay(1);
+    setDraftDateField("due");
     setDraftTags([]);
   };
 
   const saveTemplate = () => {
     const trimmed = textDraft.trim();
     if (!trimmed) return;
-    addTemplate({ text: trimmed, urgent: draftUrgent, important: draftImportant, recurring: null, tags: draftTags });
+    let recurring;
+    if (draftFreq === "daily") recurring = { type: "daily" };
+    else if (draftFreq === "weekly") recurring = { type: "weekly", days: draftWeekDays.length ? draftWeekDays : [0] };
+    else recurring = { type: "monthly", day: draftMonthDay };
+    recurring.dateField = draftDateField;
+    addTemplate({ text: trimmed, urgent: draftUrgent, important: draftImportant, recurring, tags: draftTags });
     cancelBuild();
   };
 
@@ -77,7 +107,7 @@ export default function TemplatesView() {
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
   const dataLoading = tagsLoading || templatesLoading;
 
-  const filtered = filterTags.length === 0 ? oneOffTemplates : oneOffTemplates.filter((t) => t.tags.some((tid) => filterTags.includes(tid)));
+  const filtered = filterTags.length === 0 ? recurringTemplates : recurringTemplates.filter((t) => t.tags.some((tid) => filterTags.includes(tid)));
 
   let groups = null;
   if (groupByTag) {
@@ -106,10 +136,10 @@ export default function TemplatesView() {
             {dateStr} · {timeStr}
           </div>
           <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
-            ~/templates
+            ~/recurring
           </div>
           <div style={{ fontSize: "12px", color: COLORS.dim, marginTop: "4px" }}>
-            {dataLoading ? "loading…" : `${oneOffTemplates.length} saved`}
+            {dataLoading ? "loading…" : `${recurringTemplates.length} recurring`}
           </div>
         </div>
 
@@ -158,34 +188,20 @@ export default function TemplatesView() {
                     {group.tag ? group.tag.name : "untagged"}
                   </div>
                   {group.items.map((t) => (
-                    <TemplateRow key={t.id} template={t} today={today} anchorDate={null} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+                    <TemplateRow key={t.id} template={t} today={today} anchorDate={anchorDate(t.id)} tagById={tagById} onDelete={removeTemplate} onEdit={setEditingId} />
                   ))}
                 </div>
               ))
             : filtered.map((t) => (
-                <TemplateRow key={t.id} template={t} today={today} anchorDate={null} tagById={tagById} onRun={runTemplate} onDelete={removeTemplate} onEdit={setEditingId} />
+                <TemplateRow key={t.id} template={t} today={today} anchorDate={anchorDate(t.id)} tagById={tagById} onDelete={removeTemplate} onEdit={setEditingId} />
               ))}
 
-          {!dataLoading && oneOffTemplates.length === 0 && !building && (
+          {!dataLoading && recurringTemplates.length === 0 && !building && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
-              // no templates yet
+              // no recurring templates yet
             </div>
           )}
         </div>
-
-        {/* Run log */}
-        {runLog.length > 0 && (
-          <div style={{ padding: "16px 20px 0" }}>
-            <div style={{ fontSize: "10px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "8px" }}>recent runs</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {runLog.map((r) => (
-                <div key={r.id} style={{ fontSize: "11.5px", color: COLORS.dim }}>
-                  <span style={{ color: COLORS.sage }}>$</span> added '{r.text}' · {r.time}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Builder panel */}
         {building && (
@@ -213,12 +229,75 @@ export default function TemplatesView() {
               />
             </div>
 
-            <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
               <div style={{ flex: 1 }}>
                 <Toggle value={draftUrgent} onChange={setDraftUrgent} leftLabel="not urgent" rightLabel="urgent" />
               </div>
               <div style={{ flex: 1 }}>
                 <Toggle value={draftImportant} onChange={setDraftImportant} leftLabel="not important" rightLabel="important" />
+              </div>
+            </div>
+
+            <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "10px", marginBottom: "14px" }}>
+              <div style={{ marginBottom: "10px" }}>
+                <Segmented value={draftFreq} onChange={setDraftFreq} options={FREQ_OPTIONS} />
+              </div>
+
+              {draftFreq === "weekly" && (
+                <div style={{ display: "flex", gap: "4px" }}>
+                  {DAY_LABELS.map((label, i) => {
+                    const active = draftWeekDays.includes(i);
+                    return (
+                      <span
+                        key={i}
+                        onClick={() => toggleWeekDay(i)}
+                        style={{
+                          flex: 1,
+                          textAlign: "center",
+                          fontSize: "10.5px",
+                          padding: "6px 0",
+                          borderRadius: "5px",
+                          background: active ? COLORS.amber : "transparent",
+                          color: active ? COLORS.bg : COLORS.dim,
+                          border: `1px solid ${active ? COLORS.amber : COLORS.border}`,
+                          fontWeight: active ? 600 : 400,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {draftFreq === "monthly" && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "11.5px", color: COLORS.dim }}>day of month</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={draftMonthDay}
+                    onChange={(e) => setDraftMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1)))}
+                    style={{
+                      width: "56px",
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: "5px",
+                      padding: "5px 8px",
+                      fontSize: "13px",
+                      background: "transparent",
+                      color: COLORS.text,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      caretColor: COLORS.amber,
+                    }}
+                  />
+                </div>
+              )}
+
+              <div style={{ marginTop: "10px" }}>
+                <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>schedule sets</div>
+                <Segmented value={draftDateField} onChange={setDraftDateField} options={DATE_FIELD_OPTIONS} />
               </div>
             </div>
 

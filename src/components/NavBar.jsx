@@ -1,17 +1,17 @@
-import { ListChecks, LayoutGrid, Calendar, Repeat, Tag } from "lucide-react";
+import { ListChecks, ClipboardList, Repeat, Tag } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 
-// Bottom tab bar for the Task Manager app — its 5 views (all lenses over the
-// same task store, see ARCHITECTURE.md §5) fit a standard bottom nav.
-// Countdowns and Hours are separate apps launched from the home screen
-// (§7 "Navigation shell"), each with a single view and no sub-nav.
+// Bottom tab bar for the Task Manager app — its views (all lenses/stores
+// over the same task/template data, see ARCHITECTURE.md §5) fit a standard
+// bottom nav. Matrix and Calendar are archived (unwired) — see ARCHITECTURE.md
+// §5/§7. Countdowns and Hours are separate apps launched from the home
+// screen (§7 "Navigation shell"), each with a single view and no sub-nav.
 export const NAV_HEIGHT = 56;
 
 const NAV_ITEMS = [
   { key: "tasks", label: "tasks", icon: ListChecks },
-  { key: "matrix", label: "matrix", icon: LayoutGrid },
-  { key: "calendar", label: "calendar", icon: Calendar },
-  { key: "templates", label: "templates", icon: Repeat },
+  { key: "templates", label: "templates", icon: ClipboardList },
+  { key: "recurring", label: "recurring", icon: Repeat },
   { key: "tags", label: "tags", icon: Tag },
 ];
 

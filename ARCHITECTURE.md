@@ -131,7 +131,7 @@ each app owns its own internal navigation and is otherwise independent.
 
 | App | Views inside it | Sub-nav | Notes |
 |---|---|---|---|
-| Task manager | Tasks, Matrix, Calendar, Templates, Tags | bottom tab bar (5 tabs) | all 5 are lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than five launcher tiles |
+| Task manager | Tasks, Templates, Recurring, Tags | bottom tab bar (4 tabs) | all lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than separate launcher tiles. Matrix and Calendar *(archived)* — see below — were part of this set; Templates was later split into Templates (one-off) and Recurring — see §7 |
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
 | Hours | Hours | none (single view) | clock in/out, worklog-derived running flex-time balance |
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
@@ -141,9 +141,10 @@ each app owns its own internal navigation and is otherwise independent.
 |---|---|---|---|
 | Tasks | tasks, tags | tasks | list, sort by added/priority/tag, tag filter bar |
 | Countdowns | countdowns | countdowns | yearly recurrence, `[042]`-style counter |
-| Matrix | tasks | tasks | 2×2 lens over the *same* task store — not separate data |
-| Calendar | tasks, templates, tags | tasks | list (infinite scroll, forward-only)/week/month toggle; also projects recurring templates' future occurrences (virtual, unpersisted) — see §7 |
-| Templates | templates, tasks, tags | tasks (on run, and the recurring anchor lifecycle), templates | single-task presets, optional recurrence |
+| Matrix *(archived)* | tasks | tasks | 2×2 lens over the *same* task store — not separate data |
+| Calendar *(archived)* | tasks, templates, tags | tasks | list (infinite scroll, forward-only)/week/month toggle; also projected recurring templates' future occurrences (virtual, unpersisted) — see §7 |
+| Templates | templates, tasks, tags | tasks (on run), templates | one-off, single-task presets only — split from the old combined Templates view, see §7 |
+| Recurring | templates, tasks, tags | tasks (the recurring anchor lifecycle), templates | recurring templates only — split from the old combined Templates view, see §7 |
 | Tags | tags | tags | CRUD, 8-color curated palette |
 | Hours | worklog | worklog | clock in/out; balance vs. `normalDayHours` (localStorage) derived at render time |
 
@@ -380,6 +381,26 @@ These came up in the process and were deliberately deferred — listed here so t
     something done only makes sense while viewing today — the checkbox is read-only (dimmed, no
     click handler) when browsing a different day, even though the rest of the plan (fixed blocks,
     scheduled items, overflow, squeeze/defer) stays fully interactive on any date.
+- **Matrix and Calendar (archived)**: unwired from `NavBar.jsx`'s `NAV_ITEMS` and
+  `TaskManagerApp.jsx`'s `VIEWS` map (unused in practice), same posture as Day Planner above —
+  `MatrixView.jsx`/`CalendarView.jsx` and everything they depend on (Google Calendar sync, the
+  `gcalEvents`/`gcalMeta`/`calendarSettings` stores, `src/lib/recurrence.js`'s
+  `occurrencesInRange`) are left in place rather than deleted, in case either is revisited.
+  `TaskManagerApp`'s active-tab state falls back to Tasks if a persisted tab key
+  (`manifest.taskmanager.active`) no longer resolves to a wired view, so an existing install with
+  "matrix" or "calendar" persisted doesn't hit a blank screen.
+- **Templates split into Templates and Recurring**: the old combined Templates view mixed
+  one-off, single-task presets with recurring templates (schedule builder, countdown badge,
+  anchor-task lifecycle) in one list with a per-item "one-off vs. recurring" branch. Split into
+  two views/nav tabs so each is a plain list of one kind of thing: `TemplatesView.jsx` (one-off
+  only, keeps the "run" button and run log) and `RecurringView.jsx` (recurring only, keeps the
+  schedule builder and countdown badge, no run button since an anchor task is already live).
+  Both still read/write the same `templates`/`useTemplates` store — filtered client-side by
+  `!!template.recurring` — so editing a template's recurring flag (`TemplateEditModal.jsx`,
+  shared by both views) moves it between the two views rather than needing a migration. The
+  shared row rendering (`TemplateRow.jsx`, with its countdown badge) was factored out since both
+  views need it; each view keeps its own persisted filter/group-by-tag state
+  (`manifest.templates.*` / `manifest.recurring.*`).
 - **Work hours (reworked)**: single session per day only (no split days). No export needed
   (confirmed). Reworked from a per-week target/progress-bar model into a running flex-time
   **balance**: the primary UI is clock in (log a start time) / clock out (log an end time +
@@ -393,9 +414,10 @@ These came up in the process and were deliberately deferred — listed here so t
   the earlier icon-only 7-wide bar (`NavBar.jsx`) was a stopgap, not a real IA decision. Resolved
   by restructuring as an ecosystem: a home/launcher screen (`LauncherView.jsx`) lists three apps
   — task manager, countdowns, hours — `App.jsx` switches between the launcher and the active
-  app's shell (`src/apps/*.jsx`), and each app owns its own internal nav. Task manager keeps the
-  5-tab bottom bar (`NavBar.jsx`, trimmed from 7 to the 5 task-store views); countdowns and hours
-  are single-view apps with no sub-nav. Every app shell renders a fixed `TopBar.jsx` (back arrow
+  app's shell (`src/apps/*.jsx`), and each app owns its own internal nav. Task manager keeps a
+  bottom tab bar (`NavBar.jsx`, trimmed from 7 to 5 task-store views, then to today's 4 — Matrix
+  and Calendar were later archived and Templates split into Templates/Recurring, see above);
+  countdowns and hours are single-view apps with no sub-nav. Every app shell renders a fixed `TopBar.jsx` (back arrow
   + app name) so there's always a way back to the launcher independent of that app's own nav.
   Top-level active app persists via `usePersistentState` (`manifest.nav.app`); task manager's
   active tab persists separately (`manifest.taskmanager.active`).
