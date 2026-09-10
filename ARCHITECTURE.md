@@ -134,7 +134,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Task manager | Tasks, Matrix, Calendar, Templates, Tags | bottom tab bar (5 tabs) | all 5 are lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than five launcher tiles |
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
 | Hours | Hours | none (single view) | clock in/out, worklog-derived running flex-time balance |
-| Day Planner | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7 |
+| Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
 | *(not built)* | — | — | settings — see §7 |
 
 | View | Reads | Writes | Notes |
@@ -299,7 +299,10 @@ These came up in the process and were deliberately deferred — listed here so t
   were simplified to single-task presets. The earlier "bundle of N tasks run together" concept
   became `DayShape`, built as part of the Day Planner app rather than a Templates variant, since
   its job is carving out a day's fixed time (commute/work/routine blocks), not producing tasks.
-- **Day Planner (implemented)**: a single-view app, `DayPlannerView.jsx`, answering "what should
+- **Day Planner (implemented, later archived)**: unwired from the launcher and `App.jsx`'s
+  `APPS` map (unused in practice) — the code, `DayShape`/`dayoverrides`/`dayplans` stores, and
+  the rest of this section are left as-is rather than deleted, in case it's revisited. A
+  single-view app, `DayPlannerView.jsx`, answering "what should
   I do on a given day, and how much free time is left" from data the other apps already own — no
   new task/habit source of truth, just a composition layer (`src/lib/dayPlan.js`) plus three small
   new stores. It defaults to today but a prev/next day nav (plus a "today" jump) lets it plan any

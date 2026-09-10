@@ -5,15 +5,15 @@ import TaskManagerApp from "./apps/TaskManagerApp.jsx";
 import CountdownsApp from "./apps/CountdownsApp.jsx";
 import HoursApp from "./apps/HoursApp.jsx";
 import HabitsApp from "./apps/HabitsApp.jsx";
-import DayPlannerApp from "./apps/DayPlannerApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
+// Day Planner (DayPlannerApp.jsx) is archived — unused, kept unwired. See
+// ARCHITECTURE.md §5/§7.
 const APPS = {
   taskmanager: TaskManagerApp,
   countdowns: CountdownsApp,
   hours: HoursApp,
   habits: HabitsApp,
-  dayplanner: DayPlannerApp,
 };
 
 // Home screen launches into one of three apps; each app owns its own

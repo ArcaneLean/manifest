@@ -1,9 +1,9 @@
-import { CalendarCheck2, ListChecks, Hourglass, Clock, Flame, ChevronRight } from "lucide-react";
+import { ListChecks, Hourglass, Clock, Flame, ChevronRight } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 
+// Day Planner is archived (unused) — its tile was removed here. See ARCHITECTURE.md §5/§7.
 const APPS = [
-  { key: "dayplanner", label: "day planner", path: "~/planner", icon: CalendarCheck2, desc: "day plan · time left · plan ahead" },
   {
     key: "taskmanager",
     label: "task manager",
