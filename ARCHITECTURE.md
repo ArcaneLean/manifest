@@ -458,15 +458,25 @@ These came up in the process and were deliberately deferred — listed here so t
   `dayplans`' `habitIds`/`taskIds`, so manual drag-reorder within a bucket is just an array
   position. No task/habit fields are duplicated; only which bucket an item is in and its rank
   within it.
-  - **Self-heal on load** (`useShortlist.js`): any in-scope item (non-done task, any habit) missing
-    from all three arrays is appended to `could` — this is how newly created tasks/habits get
-    "imported" with no manual step. Any id no longer backed by a live item (task completed or
-    deleted, habit deleted) is dropped from whichever array holds it. Completed tasks drop out of
-    scope entirely rather than staying visible in whatever bucket they were last triaged into.
+  - **Self-heal on load** (`useShortlist.js`): any in-scope item (non-done, already-started task,
+    any habit) missing from all three arrays is appended to `could` — this is how newly created
+    tasks/habits get "imported" with no manual step. Any id no longer backed by a live in-scope
+    item (task completed/deleted/not-yet-started, habit deleted) is dropped from whichever array
+    holds it. Completed and not-yet-started tasks drop out of scope entirely rather than staying
+    visible in whatever bucket they were last triaged into — a task with a future `startDate`
+    isn't actionable yet (`taskDates.js`'s `isScheduled`), so it's excluded the same way a done
+    task is, and re-enters `could` via self-heal once its start date arrives (any prior triage
+    position isn't remembered).
   - **Movement is stepwise, not a direct jump**: buckets sit on a fixed line, `wont ← could →
     want`. Each row shows only the button(s) pointing toward a bucket that exists — `could` shows
     both ✕ (→ `wont`) and ✓ (→ `want`); `wont` shows only ✓ (→ `could`); `want` shows only ✕ (→
     `could`). A move appends the item to the end of the destination bucket.
+  - **Tags**: each task row shows its `TagChip`s (habits carry none). A bar below the tab switcher
+    lists every tag present among the active bucket's rows, each with the same ✕/✓ buttons as a
+    row — `moveTag(tagId, fromBucket, toBucket)` is the bulk sibling of `moveItem`, stepping every
+    item in `fromBucket` carrying that tag to `toBucket` together, in their existing relative
+    order. Bucket moves (single item or whole tag) are always button-driven; drag stays reserved
+    for reordering position within a bucket, never for crossing buckets.
   - **Reset**: sets every item back to `could`, behind a confirm dialog (`ConfirmDialog.jsx`) since
     it touches everything at once and can't be undone. Ordering after reset is `[...could,
     ...want, ...wont]` — items already in `could` keep their relative position, since most of them
