@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useTasks } from "./useTasks.js";
 import { useHabits } from "./useHabits.js";
 import { getShortlistOrder, putShortlistOrder } from "../lib/shortlistRepo.js";
+import { isScheduled } from "../lib/taskDates.js";
+import { toISO } from "../lib/dateUtils.js";
 
 const BUCKETS = ["wont", "could", "want"];
 
@@ -15,16 +17,20 @@ function withoutId(order, id) {
 }
 
 // Shortlist is a pure overlay over the task/habit stores (see
-// ARCHITECTURE.md §7 "Shortlist") — only non-done tasks and all habits are
-// in scope. On every load it self-heals: any in-scope item missing from all
-// three buckets is appended to "could" (newly created tasks/habits are
-// "imported" this way with no manual step), and any id no longer backed by
-// a live item (task completed/deleted, habit deleted) is dropped.
+// ARCHITECTURE.md §7 "Shortlist") — only non-done, already-started tasks
+// and all habits are in scope. A task with a future startDate is out of
+// scope entirely (same treatment as a completed task) since it isn't
+// actionable yet — see taskDates.js. On every load it self-heals: any
+// in-scope item missing from all three buckets is appended to "could"
+// (newly created tasks/habits are "imported" this way with no manual
+// step), and any id no longer backed by a live in-scope item (task
+// completed/deleted/not-yet-started, habit deleted) is dropped.
 export function useShortlist() {
   const { tasks, loading: tasksLoading } = useTasks();
   const { habits, loading: habitsLoading } = useHabits();
   const [order, setOrder] = useState(null);
   const [orderLoading, setOrderLoading] = useState(true);
+  const todayISO = toISO(new Date());
 
   useEffect(() => {
     let cancelled = false;
@@ -41,11 +47,11 @@ export function useShortlist() {
   const items = useMemo(() => {
     const map = new Map();
     tasks
-      .filter((t) => !t.done)
-      .forEach((t) => map.set(`task:${t.id}`, { id: `task:${t.id}`, itemType: "task", text: t.text }));
-    habits.forEach((h) => map.set(`habit:${h.id}`, { id: `habit:${h.id}`, itemType: "habit", text: h.name }));
+      .filter((t) => !t.done && !isScheduled(t, todayISO))
+      .forEach((t) => map.set(`task:${t.id}`, { id: `task:${t.id}`, itemType: "task", text: t.text, tags: t.tags || [] }));
+    habits.forEach((h) => map.set(`habit:${h.id}`, { id: `habit:${h.id}`, itemType: "habit", text: h.name, tags: [] }));
     return map;
-  }, [tasks, habits]);
+  }, [tasks, habits, todayISO]);
 
   const loading = orderLoading || tasksLoading || habitsLoading;
 
@@ -80,6 +86,26 @@ export function useShortlist() {
     });
   };
 
+  // Bulk version of moveItem: every item currently in `fromBucket` carrying
+  // `tagId` steps to `toBucket` together, appended in their existing
+  // relative order — the Shortlist's per-tag ✕/✓ buttons (ARCHITECTURE.md
+  // §7 "Shortlist"). Habits never match since they carry no tags.
+  const moveTag = (tagId, fromBucket, toBucket) => {
+    setOrder((prev) => {
+      if (!prev) return prev;
+      const moving = prev[fromBucket].filter((id) => items.get(id)?.tags?.includes(tagId));
+      if (moving.length === 0) return prev;
+      const movingSet = new Set(moving);
+      const next = {
+        ...prev,
+        [fromBucket]: prev[fromBucket].filter((id) => !movingSet.has(id)),
+        [toBucket]: [...prev[toBucket], ...moving],
+      };
+      putShortlistOrder(next);
+      return next;
+    });
+  };
+
   // Replaces one bucket's ordering wholesale (manual drag reorder).
   const reorderBucket = (bucket, orderedIds) => {
     setOrder((prev) => {
@@ -102,5 +128,5 @@ export function useShortlist() {
     });
   };
 
-  return { loading, bucketItems, moveItem, reorderBucket, reset };
+  return { loading, bucketItems, moveItem, moveTag, reorderBucket, reset };
 }

@@ -3,8 +3,10 @@ import { X, Check, GripVertical, RotateCcw, ListTodo, Flame } from "lucide-react
 import { COLORS } from "../theme/colors.js";
 import { Segmented } from "../components/Segmented.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
+import { TagChip } from "../components/TagChip.jsx";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { useShortlist } from "../hooks/useShortlist.js";
+import { useTags } from "../hooks/useTags.js";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
 
 const TABS = [
@@ -13,8 +15,9 @@ const TABS = [
   { key: "want", label: "want to do" },
 ];
 
-// Which bucket each button on a row moves toward — omitted at either edge
-// since there's nowhere further to go (see ARCHITECTURE.md §7 "Shortlist").
+// Which bucket each button on a row (or each tag group's bulk button) moves
+// toward — omitted at either edge since there's nowhere further to go (see
+// ARCHITECTURE.md §7 "Shortlist").
 function stepTargets(bucket) {
   if (bucket === "wont") return { forward: "could" };
   if (bucket === "want") return { back: "could" };
@@ -31,12 +34,15 @@ function arrayMove(list, from, to) {
 
 export default function ShortlistView() {
   const [activeTab, setActiveTab] = usePersistentState("manifest.shortlist.active", "could");
-  const { loading, bucketItems, moveItem, reorderBucket, reset } = useShortlist();
+  const { loading, bucketItems, moveItem, moveTag, reorderBucket, reset } = useShortlist();
+  const { tags } = useTags();
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [rows, setRows] = useState([]);
   const [dragIndex, setDragIndex] = useState(null);
   const rowRefs = useRef([]);
   const draggingRef = useRef(false);
+
+  const tagById = (id) => tags.find((t) => t.id === id);
 
   const canonical = bucketItems(activeTab);
 
@@ -50,6 +56,20 @@ export default function ShortlistView() {
   }, [activeTab, canonical.map((r) => r.id).join(",")]);
 
   const { back, forward } = stepTargets(activeTab);
+
+  // Tags present on this bucket's rows, in the order they first appear —
+  // drives the bulk move bar below the tab switcher.
+  const presentTags = [];
+  const seenTagIds = new Set();
+  rows.forEach((r) => {
+    (r.tags || []).forEach((tid) => {
+      if (!seenTagIds.has(tid)) {
+        seenTagIds.add(tid);
+        const tag = tagById(tid);
+        if (tag) presentTags.push(tag);
+      }
+    });
+  });
 
   const handlePointerDown = (e, index) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -126,6 +146,70 @@ export default function ShortlistView() {
           <Segmented value={activeTab} onChange={setActiveTab} options={TABS} />
         </div>
 
+        {presentTags.length > 0 && (
+          <div
+            className="filter-scroll"
+            style={{ display: "flex", gap: "8px", padding: "10px 20px", borderBottom: `1px solid ${COLORS.border}` }}
+          >
+            {presentTags.map((tag) => (
+              <div
+                key={tag.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  flexShrink: 0,
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: "6px",
+                  padding: "3px 4px 3px 8px",
+                }}
+              >
+                <TagChip tag={tag} small />
+                {back && (
+                  <button
+                    onClick={() => moveTag(tag.id, activeTab, back)}
+                    aria-label={`move all "${tag.name}" items toward won't do`}
+                    title={`move all "${tag.name}" items toward won't do`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "5px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X size={11} color={COLORS.danger} strokeWidth={2.25} />
+                  </button>
+                )}
+                {forward && (
+                  <button
+                    onClick={() => moveTag(tag.id, activeTab, forward)}
+                    aria-label={`move all "${tag.name}" items toward want to do`}
+                    title={`move all "${tag.name}" items toward want to do`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "5px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Check size={11} color={COLORS.sage} strokeWidth={2.25} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div>
           {!loading && rows.length === 0 && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
@@ -136,13 +220,14 @@ export default function ShortlistView() {
           {rows.map((item, index) => {
             const isDragging = dragIndex === index;
             const Icon = item.itemType === "habit" ? Flame : ListTodo;
+            const itemTags = (item.tags || []).map(tagById).filter(Boolean);
             return (
               <div
                 key={item.id}
                 ref={(el) => (rowRefs.current[index] = el)}
                 style={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "flex-start",
                   gap: "10px",
                   padding: "12px 16px",
                   borderBottom: `1px solid ${COLORS.border}`,
@@ -156,15 +241,25 @@ export default function ShortlistView() {
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerUp}
-                  style={{ display: "flex", cursor: "grab", touchAction: "none", flexShrink: 0, padding: "4px", margin: "-4px" }}
+                  style={{ display: "flex", cursor: "grab", touchAction: "none", flexShrink: 0, padding: "4px", margin: "-4px", marginTop: "2px" }}
                   aria-label="drag to reorder"
                 >
                   <GripVertical size={14} color={COLORS.dim} />
                 </span>
 
-                <Icon size={13} color={item.itemType === "habit" ? COLORS.sage : COLORS.amberDim} strokeWidth={2} style={{ flexShrink: 0 }} />
+                <Icon size={13} color={item.itemType === "habit" ? COLORS.sage : COLORS.amberDim} strokeWidth={2} style={{ flexShrink: 0, marginTop: "3px" }} />
 
-                <span style={{ flex: 1, minWidth: 0, fontSize: "13.5px", wordBreak: "break-word" }}>{item.text}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: "13.5px", wordBreak: "break-word" }}>{item.text}</span>
+
+                  {itemTags.length > 0 && (
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "5px" }}>
+                      {itemTags.map((tag) => (
+                        <TagChip key={tag.id} tag={tag} small />
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
                   {back && (
