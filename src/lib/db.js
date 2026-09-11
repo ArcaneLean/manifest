@@ -5,7 +5,7 @@ import { openDB } from "idb";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 let dbPromise = null;
 
@@ -67,6 +67,14 @@ export function getDB() {
         // taskIds), decoupled from Task.startDate/dueDate so planning a
         // task for a day never mutates the task itself.
         ensureStore(db, "dayplans", { keyPath: "date" });
+        // Shortlist app — see ARCHITECTURE.md §7 ("Shortlist"). A single row
+        // (fixed id) holding three ordered arrays of compound item ids
+        // ("task:<id>" / "habit:<id>"), one per bucket — same
+        // ordered-array-per-list shape as `dayplans`' habitIds/taskIds, so
+        // manual reorder within a bucket is just an array position. It's a
+        // pure overlay: no task/habit data is duplicated here, only which
+        // bucket each item is in and its rank within that bucket.
+        ensureStore(db, "shortlist", { keyPath: "id" });
       },
     });
   }
