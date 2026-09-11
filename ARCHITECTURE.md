@@ -98,19 +98,31 @@ interface Countdown {
 }
 
 interface WorkLogEntry {
-  date: string;                 // ISO, one entry per day (single session — see §7 open items)
-  start: string;                 // "HH:MM"
-  end: string | null;            // null while clocked in, not yet clocked out
-  breakMin: number;
+  date: string;                  // ISO, one entry per day
+  segments: WorkSegment[];       // sequential, non-overlapping — see §7 "Hours: multi-project tracking"
+}
+
+interface WorkSegment {
+  start: string;                  // "HH:MM"
+  end: string | null;             // null while this segment is open (in progress)
+  projectId: string | null;       // null = break
+}
+
+interface Project {
+  id: string;
+  name: string;
+  color: string;              // hex, from the same curated 8-color palette as Tag
 }
 ```
 
 Hours has no per-week target store anymore — the running balance is derived at render
 time from `worklog` directly: `sum((workedMinutes(entry) - normalDayMin))` over every
-*completed* entry (`start` and `end` both set; an open, clocked-in-only entry doesn't
-count yet). `normalDayMin` is a single persisted setting (`normalDayHours`, default 8.5),
-not per-week data, so it lives in `localStorage` via `usePersistentState` rather than
-IndexedDB — see §5.
+*completed* entry (last segment closed; a day that's started but not yet clocked out
+doesn't count yet). `workedMinutes(entry)` sums only segments with a non-null
+`projectId` — break time (`projectId: null`) falls out of the total automatically rather
+than being tracked as a separate duration field. `normalDayMin` is a single persisted
+setting (`normalDayHours`, default 8.5), not per-week data, so it lives in `localStorage`
+via `usePersistentState` rather than IndexedDB — see §5.
 
 Quadrant derivation (shared helper, currently duplicated in 3 files):
 
@@ -133,7 +145,7 @@ each app owns its own internal navigation and is otherwise independent.
 |---|---|---|---|
 | Task manager | Tasks, Templates, Recurring, Tags | bottom tab bar (4 tabs) | all lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than separate launcher tiles. Matrix and Calendar *(archived)* — see below — were part of this set; Templates was later split into Templates (one-off) and Recurring — see §7 |
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
-| Hours | Hours | none (single view) | clock in/out, worklog-derived running flex-time balance |
+| Hours | Hours, Projects | 2-tab switch (log/projects) | clock in/out per project, worklog-derived running flex-time balance — see §7 "Hours: multi-project tracking" |
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
 | Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
 | Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
@@ -148,7 +160,8 @@ each app owns its own internal navigation and is otherwise independent.
 | Templates | templates, tasks, tags | tasks (on run), templates | one-off, single-task presets only — split from the old combined Templates view, see §7 |
 | Recurring | templates, tasks, tags | tasks (the recurring anchor lifecycle), templates | recurring templates only — split from the old combined Templates view, see §7 |
 | Tags | tags | tags | CRUD, 8-color curated palette |
-| Hours | worklog | worklog | clock in/out; balance vs. `normalDayHours` (localStorage) derived at render time |
+| Hours | worklog, projects | worklog | clock in/out per project or break; balance vs. `normalDayHours` (localStorage) derived at render time |
+| Projects | projects | projects | CRUD, 8-color curated palette (same `ColorPicker`/palette as Tags) |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -298,6 +311,38 @@ These came up in the process and were deliberately deferred — listed here so t
     function more than once per call (e.g. Strict Mode in dev); `putTask`/`deleteTask` are
     idempotent either way, but `spawnNextOccurrence` mints a new task id, so running it twice
     would double up the next occurrence.
+- **Hours: multi-project tracking (implemented)**: reworked from one clock-in/out
+  session per day to a sequence of `WorkSegment`s per day, each tagged to a `Project` (or
+  `projectId: null` for a break) — see §4. The day is a small state machine: **not
+  started** -> clock in (explicit project-or-break picker, no default selection, so a
+  quick clock-in can never silently land on the wrong project) -> **started** (current
+  segment open) -> **switch** (closes the open segment, opens a new one on a different
+  project/break — also how you log a break, there's no separate break field anymore) or
+  **clock out** (closes the open segment, no new one follows) -> **done**. `isCompleteEntry`
+  now means "last segment closed", not "single start+end pair set"; balance/worked-minutes
+  math is otherwise unchanged, just computed from `entry.segments` (`src/lib/timeUtils.js`).
+  The day-row/backfill edit panel (`HoursView.jsx`) became a small list editor of segment
+  rows (project select + start/end + delete) instead of one start/end/break form — reuse
+  over a drag/resize timeline, since editing a handful of rows in a personal tracker didn't
+  justify that complexity. Hours gained a second view, Projects (`ProjectsView.jsx`,
+  `useProjects.js`, `projectsRepo.js`), a straight copy of Tags' CRUD pattern; `NavBar.jsx`
+  was generalized to take an `items` prop (was hardcoded to Task Manager's 4 tabs) so Hours
+  could get its own 2-tab log/projects switch. Project deletion doesn't cascade, same
+  as tags — a stale `projectId` left on a worklog segment just renders as `"?"`.
+  - **Migration**: pre-this-change `WorkLogEntry` rows (`{date, start, end, breakMin}`)
+    are rewritten to the segment shape inside `db.js`'s `upgrade()` transaction itself
+    (`DB_VERSION` 10), not lazily on read — a lazy migration in `hoursRepo.js` was tried
+    first and had a real race: `useHours` and `useProjects` both fetch on mount, and
+    `useProjects`'s independent read could return before the migration's write (creating
+    the fallback project) landed, showing `"?"` for one load. Running it inside the
+    versionchange transaction means every entry is migrated, and the fallback project
+    created, before `getDB()` resolves for *any* caller. Old entries recorded only a
+    break *duration*, not when it happened, so the break is placed as a synthetic
+    trailing segment — this keeps the visible start-end span and total worked minutes
+    identical to the original entry, it just can't recover the break's real position in
+    the day. Migrated segments are tagged onto a fixed-id `"general"` project
+    (`legacy-general`) created on demand, rather than reattributed to whichever project
+    happens to be first in the list.
 - **Templates vs. routines/checklists (resolved — see "Day Planner" below)**: templates
   were simplified to single-task presets. The earlier "bundle of N tasks run together" concept
   became `DayShape`, built as part of the Day Planner app rather than a Templates variant, since

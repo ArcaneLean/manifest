@@ -1,11 +1,25 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 import { useHours } from "../hooks/useHours.js";
+import { useProjects } from "../hooks/useProjects.js";
 import { TOPBAR_HEIGHT } from "../components/TopBar.jsx";
+import { NAV_HEIGHT } from "../components/NavBar.jsx";
 import { toISO, startOfToday, startOfWeekMonday, addDays } from "../lib/dateUtils.js";
-import { workedMinutes, formatMinutes, formatSignedMinutes, balanceMinutes, isCompleteEntry, timeToMinutes, nowHHMM } from "../lib/timeUtils.js";
+import {
+  workedMinutes,
+  breakMinutes,
+  projectTotals,
+  formatMinutes,
+  formatSignedMinutes,
+  balanceMinutes,
+  isDayStarted,
+  isCompleteEntry,
+  openSegment,
+  timeToMinutes,
+  nowHHMM,
+} from "../lib/timeUtils.js";
 
 const DAY_LABELS_FULL = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const today0 = startOfToday();
@@ -51,15 +65,78 @@ const secondaryBtnStyle = {
 
 const linkStyle = { fontSize: "11.5px", color: COLORS.dim, cursor: "pointer", borderBottom: `1px dashed ${COLORS.border}` };
 
-function DayRow({ date, entry, isToday, normalDayMin, now, onOpen }) {
+function projectName(projects, id) {
+  return projects.find((p) => p.id === id)?.name || "?";
+}
+function projectColor(projects, id) {
+  return projects.find((p) => p.id === id)?.color || COLORS.dim;
+}
+function summaryLabel(projects, projectId, minutes) {
+  return `${projectId ? projectName(projects, projectId) : "break"} ${formatMinutes(minutes)}`;
+}
+
+// Small colored chip used for project/break selection and for the read-only
+// per-project breakdown once a day is done — same visual language as
+// TagPickerChip (components/TagChip.jsx), plus a "break" option tags don't
+// need.
+function PickChip({ label, color, active, onClick }) {
+  return (
+    <span
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "5px",
+        fontSize: "11px",
+        padding: "6px 10px",
+        borderRadius: "6px",
+        border: `1px solid ${active ? color : COLORS.border}`,
+        color: active ? color : COLORS.dim,
+        background: active ? `${color}18` : "transparent",
+        cursor: onClick ? "pointer" : "default",
+      }}
+    >
+      <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+}
+
+// Time + explicit project-or-break picker, shared by clock-in and switch —
+// there's no default selection, so confirming always reflects a deliberate
+// choice rather than a silently-assumed project.
+function ProjectTimeAction({ label, time, setTime, projectId, setProjectId, projects, onConfirm, onCancel }) {
+  const disabled = !time || projectId === undefined;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <input type="time" value={time} onChange={(e) => setTime(e.target.value)} autoFocus style={timeInputStyle} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+        <PickChip label="break" color={COLORS.dim} active={projectId === null} onClick={() => setProjectId(null)} />
+        {projects.map((p) => (
+          <PickChip key={p.id} label={p.name} color={p.color} active={projectId === p.id} onClick={() => setProjectId(p.id)} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button onClick={onConfirm} disabled={disabled} style={{ ...primaryBtnStyle, opacity: disabled ? 0.5 : 1, cursor: disabled ? "default" : "pointer" }}>
+          {label}
+        </button>
+        <button onClick={onCancel} style={secondaryBtnStyle}>
+          cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DayRow({ date, entry, isToday, projects, normalDayMin, now, onOpen }) {
   const label = DAY_LABELS_FULL[(date.getDay() + 6) % 7].slice(0, 3);
   const dateLabel = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toLowerCase();
   const complete = isCompleteEntry(entry);
-  const open = entry && entry.start && !entry.end;
+  const open = openSegment(entry);
 
   let middle = "not logged";
-  if (complete) middle = `${entry.start}–${entry.end} · ${entry.breakMin || 0}m break`;
-  else if (open) middle = `since ${entry.start}`;
+  if (complete) middle = projectTotals(entry).map(({ projectId, minutes }) => summaryLabel(projects, projectId, minutes)).join(" · ");
+  else if (open) middle = `${open.projectId ? projectName(projects, open.projectId) : "break"} since ${open.start}`;
 
   let right = "—";
   let rightColor = COLORS.border;
@@ -68,7 +145,7 @@ function DayRow({ date, entry, isToday, normalDayMin, now, onOpen }) {
     right = formatSignedMinutes(diff);
     rightColor = diff >= 0 ? COLORS.sage : COLORS.amber;
   } else if (open) {
-    right = isToday ? formatMinutes(Math.max(0, timeToMinutes(nowHHMM(now)) - timeToMinutes(entry.start))) : "open";
+    right = isToday ? formatMinutes(Math.max(0, timeToMinutes(nowHHMM(now)) - timeToMinutes(open.start))) : "open";
     rightColor = COLORS.amber;
   }
 
@@ -87,33 +164,46 @@ function DayRow({ date, entry, isToday, normalDayMin, now, onOpen }) {
   );
 }
 
-// Today's dedicated control: not-started → clock in → clocked in → clock out → done.
-function TodayClock({ entry, now, normalDayMin, onClockIn, onClockOut, onEditFull, onClear }) {
-  const [action, setAction] = useState(null); // null | "in" | "out"
+// Today's dedicated control: not-started → clock in (project/break) →
+// clocked in (switch project/break, or clock out) → done.
+function TodayClock({ entry, projects, now, normalDayMin, onClockIn, onSwitch, onClockOut, onEditFull, onClear }) {
+  const [action, setAction] = useState(null); // null | "in" | "switch" | "out"
   const [time, setTime] = useState("");
-  const [breakMin, setBreakMin] = useState(30);
+  const [projectId, setProjectId] = useState(undefined);
 
-  const started = !!(entry && entry.start);
-  const ended = isCompleteEntry(entry);
+  const started = isDayStarted(entry);
+  const done = isCompleteEntry(entry);
+  const open = openSegment(entry);
 
-  const beginClockIn = () => {
+  const beginIn = () => {
     setTime(nowHHMM(now));
+    setProjectId(undefined);
     setAction("in");
   };
-  const beginClockOut = () => {
+  const beginSwitch = () => {
     setTime(nowHHMM(now));
-    setBreakMin(entry?.breakMin ?? 30);
+    setProjectId(undefined);
+    setAction("switch");
+  };
+  const beginOut = () => {
+    setTime(nowHHMM(now));
     setAction("out");
   };
   const cancel = () => setAction(null);
+
   const confirmIn = () => {
-    if (!time) return;
-    onClockIn(time);
+    if (!time || projectId === undefined) return;
+    onClockIn(time, projectId);
+    setAction(null);
+  };
+  const confirmSwitch = () => {
+    if (!time || projectId === undefined) return;
+    onSwitch(time, projectId);
     setAction(null);
   };
   const confirmOut = () => {
     if (!time) return;
-    onClockOut(time, Number(breakMin) || 0);
+    onClockOut(time);
     setAction(null);
   };
 
@@ -122,17 +212,18 @@ function TodayClock({ entry, now, normalDayMin, onClockIn, onClockOut, onEditFul
       <div style={{ padding: "18px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "10px" }}>today · not started</div>
         {action === "in" ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} autoFocus style={timeInputStyle} />
-            <button onClick={confirmIn} style={primaryBtnStyle}>
-              clock in
-            </button>
-            <button onClick={cancel} style={secondaryBtnStyle}>
-              cancel
-            </button>
-          </div>
+          <ProjectTimeAction
+            label="clock in"
+            time={time}
+            setTime={setTime}
+            projectId={projectId}
+            setProjectId={setProjectId}
+            projects={projects}
+            onConfirm={confirmIn}
+            onCancel={cancel}
+          />
         ) : (
-          <button onClick={beginClockIn} style={primaryBtnStyle}>
+          <button onClick={beginIn} style={primaryBtnStyle}>
             clock in →
           </button>
         )}
@@ -140,29 +231,36 @@ function TodayClock({ entry, now, normalDayMin, onClockIn, onClockOut, onEditFul
     );
   }
 
-  if (started && !ended) {
-    const elapsed = Math.max(0, timeToMinutes(nowHHMM(now)) - timeToMinutes(entry.start));
+  if (started && !done) {
+    const elapsed = Math.max(0, timeToMinutes(nowHHMM(now)) - timeToMinutes(open.start));
+    const totalSoFar = workedMinutes(entry) + (open.projectId ? elapsed : 0);
+    const onBreak = !open.projectId;
     return (
       <div style={{ padding: "18px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
-        <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "6px" }}>today · clocked in at {entry.start}</div>
-        <div style={{ fontSize: "18px", fontWeight: 600, color: COLORS.amber, marginBottom: "12px" }}>
+        <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "6px" }}>
+          today · {onBreak ? "on break" : "on "}
+          {!onBreak && <span style={{ color: projectColor(projects, open.projectId) }}>{projectName(projects, open.projectId)}</span>}
+          {" since "}
+          {open.start}
+        </div>
+        <div style={{ fontSize: "18px", fontWeight: 600, color: COLORS.amber, marginBottom: "4px" }}>
           {formatMinutes(elapsed)} <span style={{ fontSize: "11px", color: COLORS.dim, fontWeight: 400 }}>elapsed</span>
         </div>
-        {action === "out" ? (
+        <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "12px" }}>{formatMinutes(totalSoFar)} worked today so far</div>
+        {action === "switch" ? (
+          <ProjectTimeAction
+            label="switch"
+            time={time}
+            setTime={setTime}
+            projectId={projectId}
+            setProjectId={setProjectId}
+            projects={projects}
+            onConfirm={confirmSwitch}
+            onCancel={cancel}
+          />
+        ) : action === "out" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <span style={{ fontSize: "10px", color: COLORS.dim }}>end</span>
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} autoFocus style={timeInputStyle} />
-              <span style={{ fontSize: "10px", color: COLORS.dim }}>break</span>
-              <input
-                type="number"
-                min={0}
-                step={5}
-                value={breakMin}
-                onChange={(e) => setBreakMin(Math.max(0, Number(e.target.value) || 0))}
-                style={{ ...timeInputStyle, width: "60px" }}
-              />
-            </div>
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} autoFocus style={timeInputStyle} />
             <div style={{ display: "flex", gap: "8px" }}>
               <button onClick={confirmOut} style={primaryBtnStyle}>
                 clock out
@@ -173,22 +271,33 @@ function TodayClock({ entry, now, normalDayMin, onClockIn, onClockOut, onEditFul
             </div>
           </div>
         ) : (
-          <button onClick={beginClockOut} style={primaryBtnStyle}>
-            clock out →
-          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button onClick={beginSwitch} style={primaryBtnStyle}>
+              switch →
+            </button>
+            <button onClick={beginOut} style={secondaryBtnStyle}>
+              clock out
+            </button>
+          </div>
         )}
       </div>
     );
   }
 
   const worked = workedMinutes(entry);
+  const brk = breakMinutes(entry);
   const diff = worked - normalDayMin;
   return (
     <div style={{ padding: "18px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
       <div style={{ fontSize: "11px", color: COLORS.dim, marginBottom: "6px" }}>today · done</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+        {projectTotals(entry).map(({ projectId: pid, minutes }) => (
+          <PickChip key={pid ?? "break"} label={summaryLabel(projects, pid, minutes)} color={pid ? projectColor(projects, pid) : COLORS.dim} active />
+        ))}
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <span style={{ fontSize: "13px", color: COLORS.text }}>
-          {entry.start}–{entry.end} · {entry.breakMin || 0}m break · {formatMinutes(worked)}
+          {formatMinutes(worked)} worked · {formatMinutes(brk)} break
         </span>
         <span style={{ fontSize: "13px", fontWeight: 600, color: diff >= 0 ? COLORS.sage : COLORS.amber }}>{formatSignedMinutes(diff)}</span>
       </div>
@@ -204,13 +313,40 @@ function TodayClock({ entry, now, normalDayMin, onClockIn, onClockOut, onEditFul
   );
 }
 
+// One row of the backfill/edit segment list — project-or-break select, start
+// and end time, delete.
+function SegmentRow({ seg, projects, onChange, onRemove }) {
+  return (
+    <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "8px" }}>
+      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: seg.projectId ? projectColor(projects, seg.projectId) : COLORS.dim, flexShrink: 0 }} />
+      <select
+        value={seg.projectId || ""}
+        onChange={(e) => onChange({ ...seg, projectId: e.target.value || null })}
+        style={{ ...timeInputStyle, flex: 1, padding: "6px 6px", minWidth: 0 }}
+      >
+        <option value="">break</option>
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <input type="time" value={seg.start} onChange={(e) => onChange({ ...seg, start: e.target.value })} style={{ ...timeInputStyle, width: "88px" }} />
+      <span style={{ color: COLORS.dim, fontSize: "11px" }}>–</span>
+      <input type="time" value={seg.end || ""} onChange={(e) => onChange({ ...seg, end: e.target.value || null })} style={{ ...timeInputStyle, width: "88px" }} />
+      <span onClick={onRemove} style={{ cursor: "pointer", flexShrink: 0 }}>
+        <X size={14} color={COLORS.dim} />
+      </span>
+    </div>
+  );
+}
+
 export default function HoursView() {
-  const { worklog, loading, saveEntry, clearEntry, normalDayHours, setNormalDayHours } = useHours();
+  const { worklog, loading, saveEntry, clearEntry, clockIn, switchSegment, clockOut, normalDayHours, setNormalDayHours } = useHours();
+  const { projects } = useProjects();
   const [anchor, setAnchor] = useState(today0);
   const [editingDate, setEditingDate] = useState(null);
-  const [editStart, setEditStart] = useState("07:30");
-  const [editEnd, setEditEnd] = useState("16:00");
-  const [editBreak, setEditBreak] = useState(30);
+  const [editSegments, setEditSegments] = useState([]);
   const [editingNormalDay, setEditingNormalDay] = useState(false);
   const [draftNormalDayHours, setDraftNormalDayHours] = useState(8.5);
   const now = useClock();
@@ -243,14 +379,30 @@ export default function HoursView() {
   const openEdit = (date) => {
     const iso = toISO(date);
     const existing = worklog[iso];
-    setEditStart(existing?.start || "07:30");
-    setEditEnd(existing?.end || "16:00");
-    setEditBreak(existing?.breakMin ?? 30);
+    setEditSegments(
+      existing && existing.segments.length > 0
+        ? existing.segments.map((s) => ({ ...s }))
+        : [{ start: "07:30", end: "16:00", projectId: projects[0]?.id ?? null }]
+    );
     setEditingDate(date);
   };
 
+  const updateSegmentRow = (i, next) => {
+    setEditSegments((prev) => prev.map((s, idx) => (idx === i ? next : s)));
+  };
+
+  const removeSegmentRow = (i) => {
+    setEditSegments((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const addSegmentRow = () => {
+    const last = editSegments[editSegments.length - 1];
+    const start = last?.end || last?.start || "09:00";
+    setEditSegments((prev) => [...prev, { start, end: null, projectId: projects[0]?.id ?? null }]);
+  };
+
   const saveEdit = () => {
-    saveEntry(toISO(editingDate), { start: editStart, end: editEnd, breakMin: Number(editBreak) || 0 });
+    saveEntry(toISO(editingDate), editSegments.filter((s) => s.start));
     setEditingDate(null);
   };
 
@@ -259,10 +411,9 @@ export default function HoursView() {
     setEditingDate(null);
   };
 
-  const previewMin = workedMinutes({ start: editStart, end: editEnd, breakMin: Number(editBreak) || 0 });
-
-  const clockIn = (time) => saveEntry(todayISO, { start: time, end: null, breakMin: 0 });
-  const clockOut = (time, breakMin) => saveEntry(todayISO, { start: todayEntry.start, end: time, breakMin });
+  const previewEntry = { segments: editSegments };
+  const previewWorked = workedMinutes(previewEntry);
+  const previewBreak = breakMinutes(previewEntry);
 
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -285,7 +436,7 @@ export default function HoursView() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "420px", padding: `${TOPBAR_HEIGHT}px 0 60px 0` }}>
+      <div style={{ width: "100%", maxWidth: "420px", padding: `${TOPBAR_HEIGHT}px 0 ${100 + NAV_HEIGHT}px 0` }}>
         {/* Header */}
         <div style={{ padding: "28px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
@@ -343,10 +494,12 @@ export default function HoursView() {
         {/* Today's clock in/out */}
         <TodayClock
           entry={todayEntry}
+          projects={projects}
           now={now}
           normalDayMin={normalDayMin}
-          onClockIn={clockIn}
-          onClockOut={clockOut}
+          onClockIn={(time, projectId) => clockIn(todayISO, time, projectId)}
+          onSwitch={(time, projectId) => switchSegment(todayISO, time, projectId)}
+          onClockOut={(time) => clockOut(todayISO, time)}
           onEditFull={() => openEdit(today0)}
           onClear={() => clearEntry(todayISO)}
         />
@@ -378,6 +531,7 @@ export default function HoursView() {
               date={date}
               entry={entry}
               isToday={toISO(date) === todayISO}
+              projects={projects}
               normalDayMin={normalDayMin}
               now={now}
               onOpen={() => openEdit(date)}
@@ -385,50 +539,33 @@ export default function HoursView() {
           ))}
         </div>
 
-        {/* Edit panel — manual correction/backfill for any day */}
+        {/* Edit panel — manual correction/backfill for any day, as a list of
+            project/break segments */}
         {editingDate && (
           <div style={{ margin: "16px 16px 0", padding: "14px 16px", border: `1px solid ${COLORS.borderBright}`, borderRadius: "8px", background: COLORS.panel }}>
             <div style={{ fontSize: "12px", color: COLORS.dim, marginBottom: "12px" }}>
               {DAY_LABELS_FULL[(editingDate.getDay() + 6) % 7]} {editingDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).toLowerCase()}
             </div>
 
-            <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "10px", color: COLORS.dim, marginBottom: "4px" }}>start</div>
-                <input
-                  type="time"
-                  value={editStart}
-                  onChange={(e) => setEditStart(e.target.value)}
-                  style={{ ...timeInputStyle, padding: "7px 8px", width: "100%" }}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "10px", color: COLORS.dim, marginBottom: "4px" }}>end</div>
-                <input
-                  type="time"
-                  value={editEnd}
-                  onChange={(e) => setEditEnd(e.target.value)}
-                  style={{ ...timeInputStyle, padding: "7px 8px", width: "100%" }}
-                />
-              </div>
+            <div style={{ marginBottom: "6px" }}>
+              {editSegments.map((seg, i) => (
+                <SegmentRow key={i} seg={seg} projects={projects} onChange={(next) => updateSegmentRow(i, next)} onRemove={() => removeSegmentRow(i)} />
+              ))}
             </div>
 
-            <div style={{ marginBottom: "14px" }}>
-              <div style={{ fontSize: "10px", color: COLORS.dim, marginBottom: "4px" }}>break (minutes)</div>
-              <input
-                type="number"
-                min={0}
-                step={5}
-                value={editBreak}
-                onChange={(e) => setEditBreak(Math.max(0, Number(e.target.value) || 0))}
-                style={{ ...timeInputStyle, padding: "7px 8px", width: "80px" }}
-              />
+            <div
+              onClick={addSegmentRow}
+              style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11.5px", color: COLORS.dim, cursor: "pointer", marginBottom: "14px" }}
+            >
+              <Plus size={12} /> add segment
             </div>
 
             <div style={{ fontSize: "11.5px", color: COLORS.dim, marginBottom: "14px", padding: "8px 10px", background: COLORS.bg, borderRadius: "5px" }}>
-              worked: <span style={{ color: COLORS.amber, fontWeight: 600 }}>{formatMinutes(previewMin)}</span>
+              worked: <span style={{ color: COLORS.amber, fontWeight: 600 }}>{formatMinutes(previewWorked)}</span>
               {" · "}
-              vs {normalDayHours}h: <span style={{ color: previewMin - normalDayMin >= 0 ? COLORS.sage : COLORS.amber, fontWeight: 600 }}>{formatSignedMinutes(previewMin - normalDayMin)}</span>
+              break: <span style={{ color: COLORS.text, fontWeight: 600 }}>{formatMinutes(previewBreak)}</span>
+              {" · "}
+              vs {normalDayHours}h: <span style={{ color: previewWorked - normalDayMin >= 0 ? COLORS.sage : COLORS.amber, fontWeight: 600 }}>{formatSignedMinutes(previewWorked - normalDayMin)}</span>
             </div>
 
             <div style={{ display: "flex", gap: "10px", justifyContent: "space-between" }}>
