@@ -1,21 +1,21 @@
 import { ListChecks, ClipboardList, Repeat, Tag } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 
-// Bottom tab bar for the Task Manager app — its views (all lenses/stores
-// over the same task/template data, see ARCHITECTURE.md §5) fit a standard
-// bottom nav. Matrix and Calendar are archived (unwired) — see ARCHITECTURE.md
-// §5/§7. Countdowns and Hours are separate apps launched from the home
-// screen (§7 "Navigation shell"), each with a single view and no sub-nav.
+// Bottom tab bar, shared by any app with more than one internal view — Task
+// Manager (tasks/templates/recurring/tags, see ARCHITECTURE.md §5) and Hours
+// (log/projects) each pass their own `items`. Matrix and Calendar are
+// archived (unwired) — see ARCHITECTURE.md §5/§7. Countdowns stays a single
+// view with no sub-nav.
 export const NAV_HEIGHT = 56;
 
-const NAV_ITEMS = [
+const DEFAULT_NAV_ITEMS = [
   { key: "tasks", label: "tasks", icon: ListChecks },
   { key: "templates", label: "templates", icon: ClipboardList },
   { key: "recurring", label: "recurring", icon: Repeat },
   { key: "tags", label: "tags", icon: Tag },
 ];
 
-export function NavBar({ active, onChange }) {
+export function NavBar({ active, onChange, items = DEFAULT_NAV_ITEMS }) {
   return (
     <nav
       style={{
@@ -32,7 +32,7 @@ export function NavBar({ active, onChange }) {
         zIndex: 40,
       }}
     >
-      {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+      {items.map(({ key, label, icon: Icon }) => {
         const isActive = active === key;
         return (
           <button
