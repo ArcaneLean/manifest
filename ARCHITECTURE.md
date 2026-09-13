@@ -516,6 +516,10 @@ These came up in the process and were deliberately deferred — listed here so t
     want`. Each row shows only the button(s) pointing toward a bucket that exists — `could` shows
     both ✕ (→ `wont`) and ✓ (→ `want`); `wont` shows only ✓ (→ `could`); `want` shows only ✕ (→
     `could`). A move appends the item to the end of the destination bucket.
+  - **Completing a task**: a task row (not a habit row — habits have no `done` state) shows a
+    `Checkbox` that calls `completeItem(id)`, the shortlist's thin wrapper around `useTasks`'
+    `toggleTask`. Marking it done takes it out of scope immediately, so the same self-heal effect
+    above drops it from its bucket on the next render rather than a bespoke removal path.
   - **Tags**: each task row shows its `TagChip`s (habits carry none). A bar below the tab switcher
     lists every tag present among the active bucket's rows, each with the same ✕/✓ buttons as a
     row — `moveTag(tagId, fromBucket, toBucket)` is the bulk sibling of `moveItem`, stepping every

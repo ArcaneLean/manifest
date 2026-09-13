@@ -4,6 +4,7 @@ import { COLORS } from "../theme/colors.js";
 import { Segmented } from "../components/Segmented.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
 import { TagChip } from "../components/TagChip.jsx";
+import { Checkbox } from "../components/Checkbox.jsx";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { useShortlist } from "../hooks/useShortlist.js";
 import { useTags } from "../hooks/useTags.js";
@@ -34,7 +35,7 @@ function arrayMove(list, from, to) {
 
 export default function ShortlistView() {
   const [activeTab, setActiveTab] = usePersistentState("manifest.shortlist.active", "could");
-  const { loading, bucketItems, moveItem, moveTag, reorderBucket, reset } = useShortlist();
+  const { loading, bucketItems, moveItem, completeItem, moveTag, reorderBucket, reset } = useShortlist();
   const { tags } = useTags();
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [rows, setRows] = useState([]);
@@ -246,6 +247,12 @@ export default function ShortlistView() {
                 >
                   <GripVertical size={14} color={COLORS.dim} />
                 </span>
+
+                {item.itemType === "task" && (
+                  <span onClick={() => completeItem(item.id)} style={{ cursor: "pointer", flexShrink: 0 }} aria-label="complete task">
+                    <Checkbox done={false} />
+                  </span>
+                )}
 
                 <Icon size={13} color={item.itemType === "habit" ? COLORS.sage : COLORS.amberDim} strokeWidth={2} style={{ flexShrink: 0, marginTop: "3px" }} />
 
