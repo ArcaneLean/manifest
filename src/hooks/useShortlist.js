@@ -26,7 +26,7 @@ function withoutId(order, id) {
 // step), and any id no longer backed by a live in-scope item (task
 // completed/deleted/not-yet-started, habit deleted) is dropped.
 export function useShortlist() {
-  const { tasks, loading: tasksLoading } = useTasks();
+  const { tasks, loading: tasksLoading, toggleTask } = useTasks();
   const { habits, loading: habitsLoading } = useHabits();
   const [order, setOrder] = useState(null);
   const [orderLoading, setOrderLoading] = useState(true);
@@ -86,6 +86,15 @@ export function useShortlist() {
     });
   };
 
+  // Marks a task done in place (habits have no "done" state and are
+  // ignored). The task then falls out of scope, so the self-heal effect
+  // above drops it from whichever bucket held it on the next render — same
+  // as if it had been completed from the Tasks view.
+  const completeItem = (id) => {
+    if (!id.startsWith("task:")) return;
+    toggleTask(id.slice("task:".length));
+  };
+
   // Bulk version of moveItem: every item currently in `fromBucket` carrying
   // `tagId` steps to `toBucket` together, appended in their existing
   // relative order — the Shortlist's per-tag ✕/✓ buttons (ARCHITECTURE.md
@@ -128,5 +137,5 @@ export function useShortlist() {
     });
   };
 
-  return { loading, bucketItems, moveItem, moveTag, reorderBucket, reset };
+  return { loading, bucketItems, moveItem, completeItem, moveTag, reorderBucket, reset };
 }
