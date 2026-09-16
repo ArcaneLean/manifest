@@ -7,7 +7,7 @@ import { TAG_PALETTE } from "../theme/colors.js";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 let dbPromise = null;
 
@@ -122,6 +122,16 @@ export function getDB() {
         // pure overlay: no task/habit data is duplicated here, only which
         // bucket each item is in and its rank within that bucket.
         ensureStore(db, "shortlist", { keyPath: "id" });
+        // Weather app — see ARCHITECTURE.md §7 ("Weather"). `rideWindows`
+        // holds the user's recurring cycling times/locations (weekly
+        // recurrence, same {days} shape as Template.recurring). `weatherCache`
+        // is a rebuildable cache of raw multi-model forecast responses, one
+        // row per rounded lat/lon, so re-opening the app or two windows that
+        // share a location don't refetch — recreated rather than migrated,
+        // like gcalEvents/gcalMeta above.
+        ensureStore(db, "rideWindows", { keyPath: "id" });
+        if (db.objectStoreNames.contains("weatherCache")) db.deleteObjectStore("weatherCache");
+        db.createObjectStore("weatherCache", { keyPath: "key" });
       },
     });
   }
