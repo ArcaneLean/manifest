@@ -288,6 +288,22 @@ These came up in the process and were deliberately deferred — listed here so t
   is driven by the worst model, not an average, so a cyclist glancing at just the summary still gets
   the same warning a model-by-model read would give. No geocoding cache — location search
   (`geocodeLocation`) is a one-off lookup when creating/editing a `RideWindow`, not a recurring call.
+  - **Day switcher (implemented)**: `WeatherView` shows one day at a time instead of every window's
+    full week stacked together — a chip strip (today .. `HORIZON_DAYS - 1` days out, exported from
+    `cyclingWeather.js` so the UI can't drift out of range with the data it navigates) picks the
+    selected date, with a small dot marking days that have at least one occurrence. Only future days
+    are navigable (today included) since past occurrences aren't meaningful for a forecast. Windows
+    whose forecast fetch failed outright (no cache to fall back on, so no occurrences at all) are
+    listed separately below the day's cards rather than silently disappearing from every day.
+  - **Wind favorability (implemented)**: `RideWindow.direction` (an optional 8-point compass bearing,
+    `COMPASS_POINTS` in `cyclingWeather.js`, picked in `RideWindowEditModal`) records which way the
+    rider actually travels. `openMeteo.js` additionally requests `wind_direction_10m`; `windRelation`
+    compares that (circular-averaged across the window's hours and across models, via
+    `circularMeanDeg`) against the heading to classify each occurrence as headwind/tailwind/crosswind.
+    A sustained headwind (not gusts — gusts already drive the poor/caution thresholds above) adds its
+    own caution/poor reason and is also surfaced as its own line on the occurrence card; tailwind and
+    crosswind are informational only and never worsen the verdict. Windows with no `direction` set
+    skip this entirely rather than showing a meaningless relation.
 - **Recurring templates on the Calendar (implemented)**: a recurring template has exactly one
   open, real "anchor" `Task` at a time, linked via `Task.templateId`. It's instantiated when the
   template is created (or recurring is switched on), dated on the schedule's actual **first
