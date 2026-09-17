@@ -136,7 +136,10 @@ function hoursInWindow(forecast, iso, startTime, endTime) {
 function aggregateModel(forecast, modelKey, indices) {
   const series = forecast.perModel[modelKey];
   if (!series) return null;
-  const pick = (field) => indices.map((i) => series[field][i]).filter((v) => v != null);
+  // A cached forecast fetched before a field was added to openMeteo.js's
+  // VARS list (e.g. wind_direction_10m) simply won't have that key — treat
+  // it as no data for that field rather than throwing on the missing array.
+  const pick = (field) => (series[field] ? indices.map((i) => series[field][i]).filter((v) => v != null) : []);
   const temps = pick("temperature_2m");
   const precip = pick("precipitation");
   const wind = pick("wind_speed_10m");
