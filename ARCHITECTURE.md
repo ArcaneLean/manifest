@@ -149,6 +149,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
 | Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
 | Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
+| Weather | Weather | none (single view) | cycling forecast cross-checked across independent models for the user's recurring ride windows — see §7 "Weather" |
 | *(not built)* | — | — | settings — see §7 |
 
 | View | Reads | Writes | Notes |
@@ -268,6 +269,25 @@ These came up in the process and were deliberately deferred — listed here so t
     (`.github/workflows/deploy.yml`). The connect/disconnect button
     (`GoogleCalendarButton.jsx`) renders nothing until that's configured, so the feature is
     invisible rather than broken for anyone who hasn't set it up.
+- **Weather (implemented)**: recurring per-ride forecast checks, entirely client-side (no backend,
+  per §1). A `RideWindow` (`src/lib/rideWindowsRepo.js`, `rideWindows` IndexedDB store) records
+  when/where the user usually cycles — label, geocoded `{lat, lon, locationLabel}`, and a weekly
+  `days`/`startTime`/`endTime` window (same `{days}` shape as `Template.recurring`, see §4).
+  `src/lib/openMeteo.js` talks to Open-Meteo — free, keyless, CORS-enabled, and able to return
+  several independently-run forecast models (`ecmwf_ifs025`, `gfs_seamless`, `icon_seamless`) from
+  one request, which is what makes cross-checking sources possible without a server proxy (most
+  providers need either an API key or a `User-Agent` header the browser won't let JS set — Google
+  Calendar's read had the same shape of problem, see above). Raw hourly forecasts are cached per
+  rounded lat/lon (`weatherCache` store, `src/lib/weatherCacheRepo.js`, two-decimal key — well under
+  model grid spacing) with a 45-minute TTL (`useCyclingForecast.js`), so windows sharing a location
+  share one fetch and a stale cached forecast is served (flagged) if a refetch fails, e.g. offline.
+  `src/lib/cyclingWeather.js` turns a window's weekly rule into this week's upcoming occurrences,
+  slices each occurrence's hourly data per model, and classifies a verdict (good/caution/poor) from
+  cycling-specific thresholds (rain, gust, cold) plus a separate `disagreement` flag when models
+  diverge past a threshold — the actual point of checking multiple sources rather than one. Severity
+  is driven by the worst model, not an average, so a cyclist glancing at just the summary still gets
+  the same warning a model-by-model read would give. No geocoding cache — location search
+  (`geocodeLocation`) is a one-off lookup when creating/editing a `RideWindow`, not a recurring call.
 - **Recurring templates on the Calendar (implemented)**: a recurring template has exactly one
   open, real "anchor" `Task` at a time, linked via `Task.templateId`. It's instantiated when the
   template is created (or recurring is switched on), dated on the schedule's actual **first
