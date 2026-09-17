@@ -1,7 +1,8 @@
 // Weather app forecast logic — see ARCHITECTURE.md §7 ("Weather"). Turns a
-// RideWindow's weekly recurrence + a raw multi-model Open-Meteo response
-// into per-occurrence aggregates, a wind-favorability reading relative to
-// the window's optional travel heading, and a plain-language verdict.
+// RideWindow's weekly recurrence + one raw multi-model Open-Meteo response
+// per stop on its route into per-occurrence aggregates (combined across
+// stops), a wind-favorability reading relative to the route's optional
+// travel heading, and a plain-language verdict.
 
 import { timeToMinutes } from "./timeUtils.js";
 import { toISO, addDays, startOfToday } from "./dateUtils.js";
@@ -198,14 +199,43 @@ export function classifyOccurrence(aggregates, wind = null) {
   return { level, reasons, disagreement };
 }
 
-// Full per-occurrence forecast for one ride window: upcoming dates, each
-// with per-model aggregates over its time-of-day window and a verdict.
-export function forecastForRideWindow(rideWindow, forecast, now = new Date()) {
-  if (!forecast) return [];
+// Merges one model's per-stop aggregates into a single route-level reading.
+// Same "worst case wins" philosophy as classifyOccurrence's cross-model
+// comparison, just applied across stops instead of across models: a rider
+// hits every stop on the route, so the coldest/wettest/gustiest stop is what
+// they actually experience, not an average of stops they didn't ride through
+// at their worst moment. Wind direction is the one exception — that's
+// informational, so it's a circular mean like summarizeWind already does
+// across models.
+function combineStops(perStopAggregates) {
+  const values = perStopAggregates.filter(Boolean);
+  if (values.length === 0) return null;
+  return {
+    temp: Math.min(...values.map((v) => v.temp)),
+    precip: Math.max(...values.map((v) => v.precip)),
+    wind: Math.max(...values.map((v) => v.wind)),
+    gust: Math.max(...values.map((v) => v.gust)),
+    windDir: circularMeanDeg(values.map((v) => v.windDir).filter((d) => d != null)),
+  };
+}
+
+// Full per-occurrence forecast for one route: upcoming dates, each with
+// per-model aggregates combined across every stop's own forecast (aligned
+// with `rideWindow.stops` — a null entry means that stop's fetch failed with
+// no cache) over the shared time-of-day window, plus one verdict for the
+// whole route.
+export function forecastForRoute(rideWindow, stopForecasts, now = new Date()) {
+  if (!stopForecasts.some(Boolean)) return [];
   return upcomingOccurrences(rideWindow, now).map((occ) => {
-    const indices = hoursInWindow(forecast, occ.iso, rideWindow.startTime, rideWindow.endTime);
     const aggregates = {};
-    for (const { key } of MODELS) aggregates[key] = aggregateModel(forecast, key, indices);
+    for (const { key } of MODELS) {
+      const perStop = stopForecasts.map((forecast) => {
+        if (!forecast) return null;
+        const indices = hoursInWindow(forecast, occ.iso, rideWindow.startTime, rideWindow.endTime);
+        return aggregateModel(forecast, key, indices);
+      });
+      aggregates[key] = combineStops(perStop);
+    }
     const wind = summarizeWind(aggregates, rideWindow.direction);
     return { ...occ, aggregates, wind, verdict: classifyOccurrence(aggregates, wind) };
   });

@@ -270,24 +270,32 @@ These came up in the process and were deliberately deferred — listed here so t
     (`GoogleCalendarButton.jsx`) renders nothing until that's configured, so the feature is
     invisible rather than broken for anyone who hasn't set it up.
 - **Weather (implemented)**: recurring per-ride forecast checks, entirely client-side (no backend,
-  per §1). A `RideWindow` (`src/lib/rideWindowsRepo.js`, `rideWindows` IndexedDB store) records
-  when/where the user usually cycles — label, geocoded `{lat, lon, locationLabel}`, and a weekly
-  `days`/`startTime`/`endTime` window (same `{days}` shape as `Template.recurring`, see §4).
-  `src/lib/openMeteo.js` talks to Open-Meteo — free, keyless, CORS-enabled, and able to return
-  several independently-run forecast models (`ecmwf_ifs025`, `gfs_seamless`, `icon_seamless`) from
-  one request, which is what makes cross-checking sources possible without a server proxy (most
-  providers need either an API key or a `User-Agent` header the browser won't let JS set — Google
-  Calendar's read had the same shape of problem, see above). Raw hourly forecasts are cached per
-  rounded lat/lon (`weatherCache` store, `src/lib/weatherCacheRepo.js`, two-decimal key — well under
-  model grid spacing) with a 45-minute TTL (`useCyclingForecast.js`), so windows sharing a location
-  share one fetch and a stale cached forecast is served (flagged) if a refetch fails, e.g. offline.
-  `src/lib/cyclingWeather.js` turns a window's weekly rule into this week's upcoming occurrences,
-  slices each occurrence's hourly data per model, and classifies a verdict (good/caution/poor) from
-  cycling-specific thresholds (rain, gust, cold) plus a separate `disagreement` flag when models
-  diverge past a threshold — the actual point of checking multiple sources rather than one. Severity
-  is driven by the worst model, not an average, so a cyclist glancing at just the summary still gets
-  the same warning a model-by-model read would give. No geocoding cache — location search
-  (`geocodeLocation`) is a one-off lookup when creating/editing a `RideWindow`, not a recurring call.
+  per §1). A `RideWindow` (`src/lib/rideWindowsRepo.js`, `rideWindows` IndexedDB store) models a
+  whole commute *route*, not a single spot on it — label, an ordered `stops` array (each a geocoded
+  `{label, lat, lon}`), and a weekly `days`/`startTime`/`endTime` window shared by every stop (same
+  `{days}` shape as `Template.recurring`, see §4). Pre-route records stored one `{lat, lon,
+  locationLabel}` directly on the window; `rideWindowsRepo.listRideWindows` migrates those on read,
+  merging legacy records that share the exact same days/startTime/endTime into one multi-stop route
+  (that recurrence match is what identifies "same commute, different waypoint" rather than a
+  coincidence) and leaving already-migrated records alone. `src/lib/openMeteo.js` talks to
+  Open-Meteo — free, keyless, CORS-enabled, and able to return several independently-run forecast
+  models (`ecmwf_ifs025`, `gfs_seamless`, `icon_seamless`) from one request, which is what makes
+  cross-checking sources possible without a server proxy (most providers need either an API key or
+  a `User-Agent` header the browser won't let JS set — Google Calendar's read had the same shape of
+  problem, see above). Raw hourly forecasts are cached per rounded lat/lon (`weatherCache` store,
+  `src/lib/weatherCacheRepo.js`, two-decimal key — well under model grid spacing) with a 45-minute
+  TTL (`useCyclingForecast.js`), so stops shared across (or repeated within) routes share one fetch
+  and a stale cached forecast is served (flagged) if a refetch fails, e.g. offline.
+  `src/lib/cyclingWeather.js` turns a route's weekly rule into this week's upcoming occurrences,
+  slices each occurrence's hourly data per stop per model, and combines per-stop aggregates into one
+  route-level reading per model (`combineStops` — coldest/wettest/gustiest stop wins, same "worst
+  case" philosophy as across models, since a rider hits every stop) before classifying a verdict
+  (good/caution/poor) from cycling-specific thresholds (rain, gust, cold) plus a separate
+  `disagreement` flag when models diverge past a threshold — the actual point of checking multiple
+  sources rather than one. Severity is driven by the worst model, not an average, so a cyclist
+  glancing at just the summary still gets the same warning a model-by-model read would give. No
+  geocoding cache — location search (`geocodeLocation`) is a one-off lookup when adding a stop in
+  `RideWindowEditModal`, not a recurring call.
   - **Day switcher (implemented)**: `WeatherView` shows one day at a time instead of every window's
     full week stacked together — a chip strip (today .. `HORIZON_DAYS - 1` days out, exported from
     `cyclingWeather.js` so the UI can't drift out of range with the data it navigates) picks the
