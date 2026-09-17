@@ -3,6 +3,7 @@ import { X, Search } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { DAY_LABELS } from "../lib/recurrence.js";
 import { geocodeLocation } from "../lib/openMeteo.js";
+import { COMPASS_POINTS } from "../lib/cyclingWeather.js";
 
 function formatCandidate(c) {
   return [c.name, c.admin1, c.country].filter(Boolean).join(", ");
@@ -23,6 +24,7 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
   const [days, setDays] = useState(rideWindow?.days || [5, 6]);
   const [startTime, setStartTime] = useState(rideWindow?.startTime || "09:00");
   const [endTime, setEndTime] = useState(rideWindow?.endTime || "12:00");
+  const [direction, setDirection] = useState(rideWindow?.direction ?? null);
   const labelRef = useRef(null);
 
   const toggleDay = (d) => {
@@ -63,6 +65,7 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
       days,
       startTime,
       endTime,
+      direction,
     });
   };
 
@@ -270,6 +273,34 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
             end time must be after start time
           </div>
         )}
+
+        <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>
+          cycling direction <span style={{ opacity: 0.7 }}>(optional — for wind favorability)</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px", marginBottom: "16px" }}>
+          {COMPASS_POINTS.map((p) => {
+            const active = direction === p.deg;
+            return (
+              <span
+                key={p.deg}
+                onClick={() => setDirection(active ? null : p.deg)}
+                style={{
+                  textAlign: "center",
+                  fontSize: "11px",
+                  padding: "6px 0",
+                  borderRadius: "5px",
+                  background: active ? COLORS.amber : "transparent",
+                  color: active ? COLORS.bg : COLORS.dim,
+                  border: `1px solid ${active ? COLORS.amber : COLORS.border}`,
+                  fontWeight: active ? 600 : 400,
+                  cursor: "pointer",
+                }}
+              >
+                {p.arrow} {p.label}
+              </span>
+            );
+          })}
+        </div>
 
         <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
           <button

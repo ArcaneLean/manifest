@@ -32,7 +32,7 @@ export async function geocodeLocation(query) {
   }));
 }
 
-const VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m"];
+const VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"];
 
 // Raw {time, perModel: {modelKey: {temperature_2m: [], precipitation: [], ...}}}
 // hourly forecast for one location, `FORECAST_DAYS` ahead. Left un-aggregated
