@@ -9,18 +9,17 @@ function formatCandidate(c) {
   return [c.name, c.admin1, c.country].filter(Boolean).join(", ");
 }
 
-// Add/edit a RideWindow (label, location, weekly days, time-of-day range).
-// `rideWindow` is null when adding, an existing record when editing —
-// mirrors TemplateEditModal's shape for the same reason (one modal, two modes).
+// Add/edit a RideWindow — a whole commute route (label, one or more stops,
+// weekly days, time-of-day range). `rideWindow` is null when adding, an
+// existing record when editing — mirrors TemplateEditModal's shape for the
+// same reason (one modal, two modes).
 export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
   const [label, setLabel] = useState(rideWindow?.label || "");
-  const [query, setQuery] = useState(rideWindow?.locationLabel || "");
+  const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
-  const [location, setLocation] = useState(
-    rideWindow ? { label: rideWindow.locationLabel, lat: rideWindow.lat, lon: rideWindow.lon } : null
-  );
+  const [stops, setStops] = useState(rideWindow?.stops || []);
   const [days, setDays] = useState(rideWindow?.days || [5, 6]);
   const [startTime, setStartTime] = useState(rideWindow?.startTime || "09:00");
   const [endTime, setEndTime] = useState(rideWindow?.endTime || "12:00");
@@ -47,21 +46,23 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
     }
   };
 
-  const pickCandidate = (c) => {
-    setLocation({ label: formatCandidate(c), lat: c.lat, lon: c.lon });
-    setQuery(formatCandidate(c));
+  const addCandidate = (c) => {
+    setStops((prev) => [...prev, { label: formatCandidate(c), lat: c.lat, lon: c.lon }]);
+    setQuery("");
     setCandidates([]);
   };
 
-  const canSave = label.trim().length > 0 && !!location && days.length > 0 && startTime < endTime;
+  const removeStop = (i) => {
+    setStops((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const canSave = label.trim().length > 0 && stops.length > 0 && days.length > 0 && startTime < endTime;
 
   const handleSave = () => {
     if (!canSave) return;
     onSave({
       label: label.trim(),
-      locationLabel: location.label,
-      lat: location.lat,
-      lon: location.lon,
+      stops,
       days,
       startTime,
       endTime,
@@ -100,7 +101,7 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
           <span style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", textTransform: "uppercase" }}>
-            {rideWindow ? "edit ride window" : "new ride window"}
+            {rideWindow ? "edit route" : "new route"}
           </span>
           <span onClick={onClose} style={{ cursor: "pointer" }}>
             <X size={16} color={COLORS.dim} />
@@ -128,18 +129,43 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
           }}
         />
 
-        <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>location</div>
+        <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>
+          stops <span style={{ opacity: 0.7 }}>(everywhere along the route)</span>
+        </div>
+
+        {stops.length > 0 && (
+          <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: "6px", marginBottom: "10px", overflow: "hidden" }}>
+            {stops.map((s, i) => (
+              <div
+                key={`${s.lat},${s.lon},${i}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                  padding: "9px 10px",
+                  fontSize: "12.5px",
+                  color: COLORS.text,
+                  borderTop: i > 0 ? `1px solid ${COLORS.border}` : "none",
+                }}
+              >
+                <span>{s.label}</span>
+                <span onClick={() => removeStop(i)} style={{ cursor: "pointer", flexShrink: 0 }}>
+                  <X size={13} color={COLORS.dim} />
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           <input
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setLocation(null);
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") runSearch();
             }}
-            placeholder="search a place"
+            placeholder="search a place to add"
             style={{
               flex: 1,
               background: "transparent",
@@ -181,7 +207,7 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
             {candidates.map((c, i) => (
               <div
                 key={`${c.lat},${c.lon}`}
-                onClick={() => pickCandidate(c)}
+                onClick={() => addCandidate(c)}
                 style={{
                   padding: "9px 10px",
                   fontSize: "12.5px",
@@ -195,13 +221,7 @@ export function RideWindowEditModal({ rideWindow, onSave, onClose }) {
             ))}
           </div>
         )}
-
-        {location && (
-          <div style={{ fontSize: "11.5px", color: COLORS.sage, marginBottom: "14px" }}>
-            ✓ {location.label} ({location.lat.toFixed(2)}, {location.lon.toFixed(2)})
-          </div>
-        )}
-        {!location && candidates.length === 0 && !searchError && <div style={{ marginBottom: "14px" }} />}
+        {candidates.length === 0 && !searchError && <div style={{ marginBottom: "14px" }} />}
 
         <div style={{ fontSize: "10.5px", color: COLORS.dim, marginBottom: "6px" }}>days</div>
         <div style={{ display: "flex", gap: "4px", marginBottom: "14px" }}>

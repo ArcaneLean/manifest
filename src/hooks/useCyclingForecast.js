@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchForecast } from "../lib/openMeteo.js";
 import { getCachedForecast, putCachedForecast, locationKey } from "../lib/weatherCacheRepo.js";
-import { forecastForRideWindow } from "../lib/cyclingWeather.js";
+import { forecastForRoute } from "../lib/cyclingWeather.js";
 
 // Forecasts change slowly enough (and Open-Meteo's free tier is rate
 // limited) that re-fetching on every app open isn't worth it — reuse a
@@ -9,9 +9,10 @@ import { forecastForRideWindow } from "../lib/cyclingWeather.js";
 // stale) if a refetch fails, e.g. offline.
 const TTL_MS = 45 * 60 * 1000;
 
-// Fetches (and IndexedDB-caches) one forecast per unique location among the
-// given ride windows, then slices each into its own per-occurrence
-// forecast. Multiple windows sharing a location share one fetch.
+// Fetches (and IndexedDB-caches) one forecast per unique location among all
+// stops of the given routes, then combines each route's own stops into its
+// own per-occurrence forecast (see cyclingWeather.js's forecastForRoute).
+// Stops shared across routes, or repeated within one route, share a fetch.
 export function useCyclingForecast(rideWindows) {
   const [byLocation, setByLocation] = useState({});
   const [loading, setLoading] = useState(false);
@@ -19,8 +20,10 @@ export function useCyclingForecast(rideWindows) {
   const locations = useMemo(() => {
     const map = new Map();
     for (const w of rideWindows) {
-      const key = locationKey(w.lat, w.lon);
-      if (!map.has(key)) map.set(key, { key, lat: w.lat, lon: w.lon });
+      for (const stop of w.stops) {
+        const key = locationKey(stop.lat, stop.lon);
+        if (!map.has(key)) map.set(key, { key, lat: stop.lat, lon: stop.lon });
+      }
     }
     return [...map.values()];
   }, [rideWindows]);
@@ -70,12 +73,12 @@ export function useCyclingForecast(rideWindows) {
 
   const forecastsByWindow = {};
   for (const w of rideWindows) {
-    const entry = byLocation[locationKey(w.lat, w.lon)];
+    const stopEntries = w.stops.map((stop) => byLocation[locationKey(stop.lat, stop.lon)]);
     forecastsByWindow[w.id] = {
-      occurrences: entry?.forecast ? forecastForRideWindow(w, entry.forecast) : [],
-      fetchedAt: entry?.fetchedAt ?? null,
-      stale: entry?.stale ?? false,
-      error: entry?.error ?? null,
+      occurrences: forecastForRoute(w, stopEntries.map((e) => e?.forecast ?? null)),
+      fetchedAt: stopEntries.reduce((max, e) => (e?.fetchedAt && e.fetchedAt > (max ?? 0) ? e.fetchedAt : max), null),
+      stale: stopEntries.some((e) => e?.stale),
+      error: stopEntries.find((e) => e?.error)?.error ?? null,
     };
   }
 

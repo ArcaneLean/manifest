@@ -56,6 +56,12 @@ function WindLine({ wind }) {
   );
 }
 
+// City-only stop names joined for a compact route line — "Vessem, Veldhoven,
+// Eindhoven" rather than each stop's full geocoded label.
+function routeStopsLabel(stops) {
+  return stops.map((s) => (s.label || "").split(",")[0].trim()).join(", ");
+}
+
 function RideDayCard({ rideWindow, occurrence, stale, error, onEdit, onRemove }) {
   const v = VERDICT_STYLE[occurrence.verdict.level];
   return (
@@ -81,11 +87,11 @@ function RideDayCard({ rideWindow, occurrence, stale, error, onEdit, onRemove })
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "3px", color: COLORS.dim, fontSize: "11.5px" }}>
             <MapPin size={11} />
-            <span>{rideWindow.locationLabel}</span>
+            <span>{routeStopsLabel(rideWindow.stops)}</span>
             <span>· {rideWindow.startTime}–{rideWindow.endTime}</span>
           </div>
         </div>
-        <span onClick={onRemove} aria-label="remove ride window" style={{ cursor: "pointer", flexShrink: 0, paddingTop: "4px" }}>
+        <span onClick={onRemove} aria-label="remove route" style={{ cursor: "pointer", flexShrink: 0, paddingTop: "4px" }}>
           <X size={13} color={COLORS.dim} />
         </span>
       </div>
@@ -194,7 +200,7 @@ export default function WeatherView() {
             </button>
           </div>
           <div style={{ fontSize: "12px", color: COLORS.dim, marginTop: "4px" }}>
-            {loading ? "loading…" : `${rideWindows.length} ride window${rideWindows.length === 1 ? "" : "s"} · ECMWF/GFS/ICON compared`}
+            {loading ? "loading…" : `${rideWindows.length} route${rideWindows.length === 1 ? "" : "s"} · ECMWF/GFS/ICON compared`}
           </div>
         </div>
 
@@ -241,7 +247,7 @@ export default function WeatherView() {
 
             <div style={{ padding: "14px 20px 0", fontSize: "13px", color: COLORS.dim }}>
               {fullDayLabel(selectedDay.date)}
-              {windowsForDay.length > 0 && ` · ${windowsForDay.length} ride window${windowsForDay.length === 1 ? "" : "s"}`}
+              {windowsForDay.length > 0 && ` · ${windowsForDay.length} route${windowsForDay.length === 1 ? "" : "s"}`}
             </div>
           </>
         )}
@@ -261,13 +267,13 @@ export default function WeatherView() {
 
           {!loading && rideWindows.length > 0 && windowsForDay.length === 0 && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
-              // no ride windows scheduled {fullDayLabel(selectedDay.date)}
+              // no routes scheduled {fullDayLabel(selectedDay.date)}
             </div>
           )}
 
           {!loading && rideWindows.length === 0 && (
             <div style={{ padding: "40px 20px", color: COLORS.dim, fontSize: "13px", textAlign: "center" }}>
-              // no ride windows set up yet — add when/where you usually ride
+              // no routes set up yet — add when/where you usually ride
             </div>
           )}
 
