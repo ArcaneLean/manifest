@@ -26,8 +26,8 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 | Local storage | IndexedDB | source of truth, offline-first, survives reload |
 | Hosting | GitHub Pages | free, static, fits FOSS orientation |
 | Updates | Service worker | detects new deployed assets, prompts refresh — no separate release/versioning step needed |
-| Sync/backup | GitHub repo (JSON snapshots), written via a small serverless proxy (e.g. Cloudflare Worker) | keeps the GitHub PAT off the client; GitHub itself is not fast/queryable enough to be the primary store |
-| Conflict handling | Not yet designed | needs a real strategy before sync ships — see §6 |
+| Sync/backup | Per-device JSON snapshot pushed to Google Drive's hidden `appDataFolder` | no backend/proxy needed (unlike a GitHub PAT, a Drive OAuth token is safe client-side); reuses the OAuth plumbing already built for Google Calendar |
+| Conflict handling | N/A — deliberately not sync | each device only ever reads/writes its own file, so there's nothing to merge — see §6 |
 
 ## 3. Visual language ("Terminal Log" theme)
 
@@ -169,14 +169,21 @@ component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolida
 shared modules is the first real task once this moves into Claude Code — not optional cleanup,
 since several views already depend on the *same* underlying task records.
 
-## 6. Sync design (recap, still needs implementation)
+## 6. Sync design (resolved — see §7 "Drive backup")
 
 - IndexedDB is the only thing the app reads/writes during normal use.
-- Periodically (or on-demand), a snapshot syncs to a GitHub repo through a small serverless
-  proxy that holds the GitHub PAT server-side — the client never sees the token.
-- **Not yet designed:** conflict resolution when the same record changes on two devices while
-  offline. Needs a real strategy (last-write-wins with a timestamp is the simplest starting
-  point; a proper CRDT/merge approach is more correct but more work) before this ships.
+- Periodically (or on-demand), a full snapshot is pushed to Google Drive — one file per
+  device, not one shared file, so this is **backup, not cross-device sync**: opening the app
+  on a second device does not pull the first device's data. This was a deliberate choice over
+  a shared-file/pull design, made specifically to avoid needing conflict resolution (merging
+  the same record edited on two devices while offline) — a real gap that was never designed
+  for the earlier GitHub-repo plan and is sidestepped entirely by never reading another
+  device's file. If cross-device access is wanted later, that needs a real merge strategy
+  (last-write-wins with a per-record timestamp is the simplest starting point) — not
+  implemented, and a separate decision from the backup mechanism here.
+- The original GitHub-repo-via-serverless-proxy plan (still described in prior revisions of
+  this doc) was superseded by Drive specifically because Drive tokens are safe to hold
+  client-side, unlike a GitHub PAT — so no backend/proxy needs to be built and hosted.
 
 ## 7. Open decisions carried over from prototyping
 
@@ -512,6 +519,41 @@ These came up in the process and were deliberately deferred — listed here so t
   + app name) so there's always a way back to the launcher independent of that app's own nav.
   Top-level active app persists via `usePersistentState` (`manifest.nav.app`); task manager's
   active tab persists separately (`manifest.taskmanager.active`).
+- **Drive backup (implemented)**: per-device backup of the entire local dataset to Google
+  Drive, entirely client-side (no backend, per §1) — resolves §6's sync design. Auth is a
+  second, independent OAuth token client (`src/lib/driveAuth.js`, same GIS pattern as
+  `googleAuth.js`) scoped to `drive.appdata` rather than `calendar.readonly` — deliberately
+  separate from the Calendar token client so connecting/disconnecting one feature never
+  touches the other's grant, even though both share the same `VITE_GOOGLE_CLIENT_ID` (a scope
+  is requested per token client, not baked into the client id itself).
+  - **Per-device, not shared**: a random id (`crypto.randomUUID()`, `src/lib/deviceId.js`,
+    persisted in `localStorage` as device identity rather than app data) names each device's
+    backup file (`manifest-backup-{deviceId}.json`). The app never reads any file back —
+    push-only — so two devices never need to merge; see §6 for why that was chosen over a
+    pull/shared-file design.
+  - **Storage location**: Drive's `appDataFolder`, a hidden space scoped to the app itself —
+    invisible in the user's normal Drive UI, no folder-picker needed, and not readable by other
+    apps. `src/lib/driveBackup.js` finds-or-creates the device's file there (cached file id in
+    `localStorage` so a routine backup is a single `PATCH` media upload, not a list-then-write
+    round trip; falls back to searching by name, then creating, if the cached id 404s).
+  - **Snapshot shape**: `src/lib/backupSnapshot.js` dumps every IndexedDB object store into one
+    JSON blob (`{version, exportedAt, stores}`), reading `db.objectStoreNames` dynamically
+    rather than a hardcoded list so a newly added store is included with no separate list to
+    maintain. There's no restore path yet — see "Still open" below.
+  - **Trigger + cadence**: `src/hooks/useDriveBackup.js` pushes once immediately on connect
+    (interactive, requesting consent) and silently every 15 minutes thereafter while the app is
+    open and `connected` is true (persisted flag, same "reconnect silently on load" pattern as
+    `useGoogleCalendar`) — no attempt to push on every write, which would be far more API calls
+    than a personal backup needs.
+  - **UI**: `DriveBackupButton.jsx` (mirrors `GoogleCalendarButton.jsx`'s icon-button styling),
+    rendered in `LauncherView.jsx`'s header since there's no settings view yet (see below). A
+    plain click connects (first time) or triggers an immediate backup (once connected); a
+    right-click disconnects (revokes the OAuth grant, does not delete the Drive file or clear
+    `lastBackupAt`) — same deliberately-harder-to-hit placement as Calendar's disconnect.
+  - **Still open**: no restore/import path (reading a device's own or another device's snapshot
+    back into IndexedDB) — this ships backup only. Also no UI surfacing *which* device a backup
+    belongs to beyond the opaque id in the filename, since there's no multi-device management
+    view yet either.
 - **Settings view**: doesn't exist yet. Needed for at least: default week hour target, GitHub
   sync configuration, theme (if made configurable at all).
 - **Home/dashboard view (built)**: `LauncherView.jsx` is now the landing screen — an app
