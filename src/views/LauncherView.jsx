@@ -1,6 +1,8 @@
 import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
+import { useDriveBackup } from "../hooks/useDriveBackup.js";
+import { DriveBackupButton } from "../components/DriveBackupButton.jsx";
 
 // Day Planner is archived (unused) — its tile was removed here. See ARCHITECTURE.md §5/§7.
 const APPS = [
@@ -22,6 +24,7 @@ export default function LauncherView({ onOpen }) {
   const now = useClock();
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const drive = useDriveBackup();
 
   return (
     <div
@@ -41,8 +44,20 @@ export default function LauncherView({ onOpen }) {
           <div style={{ fontSize: "11px", color: COLORS.dim, letterSpacing: "1px", marginBottom: "6px" }}>
             {dateStr} · {timeStr}
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
-            ~/manifest
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
+              ~/manifest
+            </div>
+            <DriveBackupButton
+              configured={drive.configured}
+              connected={drive.connected}
+              status={drive.status}
+              error={drive.error}
+              lastBackupAt={drive.lastBackupAt}
+              onConnect={drive.connect}
+              onBackupNow={drive.backupNow}
+              onDisconnect={drive.disconnect}
+            />
           </div>
         </div>
 
