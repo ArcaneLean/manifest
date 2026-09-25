@@ -1,8 +1,10 @@
 // Pushes a full local snapshot to this device's own hidden file in the
 // user's Google Drive "appDataFolder" — see ARCHITECTURE.md §7 ("Drive
 // backup"). Per-device backup, not cross-device sync: each device writes
-// its own file (named by deviceId) and never reads another device's file,
-// so there's no merge/conflict logic to get wrong. appDataFolder is a
+// only its own file (named by deviceId) and never merges another device's
+// file in, so there's no merge/conflict logic to get wrong. Reading a file
+// back is a manual, whole-dataset restore (listBackupFiles /
+// downloadBackupFile below), never an automatic pull. appDataFolder is a
 // special Drive space, invisible in the user's regular Drive UI and only
 // readable/writable by the app that created it — no folder-picker or
 // visible clutter in the user's Drive.
@@ -12,9 +14,10 @@ import { buildBackupSnapshot } from "./backupSnapshot.js";
 const FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
 const CACHED_FILE_ID_KEY = "manifest.drive.backupFileId";
+const FILENAME_PREFIX = "manifest-backup-";
 
 function backupFilename() {
-  return `manifest-backup-${getDeviceId()}.json`;
+  return `${FILENAME_PREFIX}${getDeviceId()}.json`;
 }
 
 async function driveFetch(url, token, options) {
@@ -89,4 +92,36 @@ export async function pushBackupSnapshot(token) {
     fileId = await createFile(token, filename, body);
   }
   localStorage.setItem(CACHED_FILE_ID_KEY, fileId);
+}
+
+// Every device's backup file, newest first — for restoring onto a device
+// that has no data of its own yet (new install, or a new origin after a
+// hosting move: IndexedDB and the deviceId are both per-origin, so the app
+// on a new domain starts empty under a fresh id, while appDataFolder is
+// scoped to the OAuth client and still holds the old files). `deviceId` is
+// parsed back out of the filename; `isThisDevice` marks this device's own.
+export async function listBackupFiles(token) {
+  const q = encodeURIComponent(`name contains '${FILENAME_PREFIX}' and trashed=false`);
+  const res = await driveFetch(
+    `${FILES_URL}?spaces=appDataFolder&q=${q}&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime,size)`,
+    token,
+    {}
+  );
+  const { files } = await res.json();
+  const ownId = getDeviceId();
+  return (files || []).map((f) => {
+    const deviceId = f.name.slice(FILENAME_PREFIX.length).replace(/\.json$/, "");
+    return {
+      id: f.id,
+      deviceId,
+      isThisDevice: deviceId === ownId,
+      modifiedAt: Date.parse(f.modifiedTime),
+      size: Number(f.size) || 0,
+    };
+  });
+}
+
+export async function downloadBackupFile(token, fileId) {
+  const res = await driveFetch(`${FILES_URL}/${fileId}?alt=media`, token, {});
+  return res.json();
 }
