@@ -9,9 +9,10 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
   falls out for free by being a PWA rather than a native app.
 - Local-first for personal data: the personal apps must be fully usable offline. IndexedDB is
   the source of truth on-device, not a cache in front of a server.
-- Work data is the exception: work tasks and hours are online-only, stored server-side in a
+- ~~Work data is the exception: work tasks and hours are online-only, stored server-side in a
   Cloudflare Worker + D1 so they're reachable from the work laptop and queryable/editable by
-  Claude over MCP — see §6. Nothing personal goes to that backend.
+  Claude over MCP — see §6.~~ *Shelved — not doing this now (§6.2).* For now work data (Hours)
+  stays local-first in IndexedDB like everything else.
 - FOSS/self-hosted orientation — avoid vendor lock-in where reasonable.
 - No home-screen widgets: confirmed PWAs can't do this on Android or iOS today. A native
   companion widget is a separate, later decision if ever wanted — not part of this build.
@@ -26,11 +27,11 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 |---|---|---|
 | UI | React, installable PWA | single codebase, works on Android + any desktop browser |
 | Local storage | IndexedDB | source of truth, offline-first, survives reload |
-| Hosting | GitHub Pages → moving to a Cloudflare Worker serving the built PWA as static assets (§6) | same origin as the work API, so Cloudflare Access protects both with no CORS/token plumbing; still auto-deployed from `main` by GitHub Actions |
-| Work backend *(planned)* | Cloudflare Worker (`/api/*` REST for the PWA, `/mcp` for Claude) + D1 | online-only work tasks + hours, one shared domain layer behind both front doors — see §6 |
+| Hosting | GitHub Pages, auto-deployed from `main` by GitHub Actions | the move to a Cloudflare Worker (§6.2) is shelved — not doing it now |
+| Work backend *(shelved — not now)* | ~~Cloudflare Worker (`/api/*` REST for the PWA, `/mcp` for Claude) + D1~~ | kept as a parked plan in §6.2; not being built now |
 | Updates | Service worker | detects new deployed assets, prompts refresh — no separate release/versioning step needed |
 | Sync/backup (personal) | Per-device JSON snapshot pushed to Google Drive's hidden `appDataFolder`, with manual whole-dataset restore | no backend/proxy needed (unlike a GitHub PAT, a Drive OAuth token is safe client-side); reuses the OAuth plumbing already built for Google Calendar |
-| Conflict handling | N/A — deliberately not sync | personal data: each device only ever writes its own file, restore is a manual replace, never a merge. Work data: one server-side copy, so nothing to merge either — see §6 |
+| Conflict handling | N/A — deliberately not sync | personal data: each device only ever writes its own file, restore is a manual replace, never a merge. (The shelved Cloudflare plan would have kept work data as one server-side copy — §6.2) |
 
 ## 3. Visual language ("Terminal Log" theme)
 
@@ -188,7 +189,13 @@ since several views already depend on the *same* underlying task records.
 - The original GitHub-repo-via-serverless-proxy plan was superseded by Drive specifically
   because Drive tokens are safe to hold client-side, unlike a GitHub PAT.
 
-### 6.2 Work data: online-only on Cloudflare (planned)
+### 6.2 Work data: online-only on Cloudflare (shelved — not doing this now)
+
+> **Status: shelved.** Decided not to pursue any of this plan right now — no hosting move, no
+> Worker/D1 backend, no MCP server, no Work tasks app. Hours stays local-first in IndexedDB
+> (and in the Drive snapshot) and is being redesigned in place instead — see §7 "Hours 2.0".
+> Everything below is kept only as a parked reference in case it's revisited; don't build from
+> it without re-deciding.
 
 **Why**: work tasks and hours need to be reachable from the work laptop and queryable/editable
 by Claude (AI agents over MCP). Giving a second writer (an agent) access to local-first data
@@ -631,8 +638,9 @@ These came up in the process and were deliberately deferred — listed here so t
     `lastBackupAt`) — same deliberately-harder-to-hit placement as Calendar's disconnect.
   - **Restore + export (implemented)**: `BackupsModal.jsx`, opened from an always-visible
     archive icon in the launcher header (shown even without `VITE_GOOGLE_CLIENT_ID`, since the
-    file path doesn't need Google). Built primarily for the Cloudflare hosting move (§6.2), where
-    the new origin starts with empty IndexedDB and a fresh `deviceId`.
+    file path doesn't need Google). Built primarily for the Cloudflare hosting move (§6.2, since
+    shelved), where the new origin would start with empty IndexedDB and a fresh `deviceId`; still
+    useful on its own for moving data between devices/browsers.
     - Sources: every device's Drive file (`listBackupFiles` in `driveBackup.js`, newest first,
       "this device" vs. `device <id prefix>`; the consent popup is shown if Drive isn't connected
       yet), or a local JSON file. Export writes the same snapshot to a downloaded file
@@ -718,6 +726,74 @@ These came up in the process and were deliberately deferred — listed here so t
     store only), Shortlist also covers habits, so it's its own top-level launcher app rather than
     a 5th Task Manager tab.
 
+- **Hours 2.0 (brainstorm — design only, not built)**: a ground-up redesign of Hours around
+  *weeks*, replacing the per-day `normalDayHours` flex balance. Still local-first (IndexedDB +
+  Drive snapshot) now that §6.2 is shelved.
+  - **Three different numbers, deliberately kept apart**:
+    - **Worked** (what I'm entitled to get paid for). *Office day*: `leave − arrive − lunch`
+      (arrival/leave at the office, lunch fixed at 30m). *Home day*: the sum of logged project
+      segments (breaks already excluded), since there's no arrive/leave to go by.
+    - **Logged**: the sum of project segments (the existing clock in/switch/out data). On an
+      office day this doesn't have to match worked — e.g. arrive 08:10, leave 17:05 → worked
+      8h25, but logged might be 7h45. Logged is what says *where* the time went.
+    - **Booked**: what goes into the employer's booking system. Always **40h/week**, entered as
+      8h/day in 30m steps per booking code, usually all at once at the end of the week (can
+      be earlier).
+  - **Bank**: each week's `worked − 40h` is carried into a running bank, so a +1h30 week means
+    the next week only needs 38h30 of work to break even (and a short week the reverse).
+    Derived at render time from `worklog` (like today's balance), summed over *closed* weeks
+    (past weeks; the current week is shown as a projection), plus an optional opening balance.
+  - **Drill-down flow** (replaces the current single log view):
+    1. **Weeks** (app root): bank balance on top, then one row per week, newest first —
+       `wk 39 · 22–26 sep   bookable 40h · worked 41h30 · +1h30   [booked]`. The current week
+       row also shows what's left to break even (`40h − bank − worked so far`). A "today" strip
+       at the top keeps clock in/switch/out one tap away, so drilling down isn't required for
+       the everyday action.
+    2. **Week**: the same bookable / worked / difference stats (plus logged), then hours per
+       project/booking code (logged, and booked once a booking exists), then the 5 workdays —
+       `mon 22  office  08:10–17:05  8h25` / `tue 23  home  08:30–16:45  7h45` (home days show
+       first/last segment times and render differently, e.g. a `home` tag instead of `office`).
+       Also the entry point for booking the week.
+    3. **Day**: that day's stats (office: arrive/leave, lunch, worked; logged; unlogged gap =
+       worked − logged) and the list of logged segments — the existing segment editor, plus the
+       live clock controls when the day is today.
+  - **Booking helper (idea)**: propose a booking for the week — split 40h across booking codes
+    in proportion to logged hours, round to 30m (largest remainder so it sums to exactly 40h),
+    then pack into 8h per day, preferring days where that code was actually logged. Editable
+    before confirming; once confirmed it's stored so it's a record of what was really booked.
+  - **Data model sketch**:
+    ```ts
+    interface WorkDay {              // evolves WorkLogEntry, same `worklog` store, keyed by date
+      date: string;
+      location: "office" | "home";
+      arrive?: string | null;        // office only, "HH:MM"
+      leave?: string | null;         // office only
+      lunchMin?: number;             // office only, default 30
+      segments: WorkSegment[];       // unchanged
+    }
+    interface WeekBooking {          // new `bookings` store, keyed by weekStart (Monday ISO)
+      weekStart: string;
+      lines: { date: string; projectId: string; minutes: number }[]; // 30m multiples, 8h/day
+      bookedAt: number | null;       // null = draft
+    }
+    // Project gains an optional `bookingCode?: string`.
+    // Settings: bookable hours/week (40), office lunch (30m), opening bank.
+    ```
+    Existing entries migrate as `location: "home"` (worked = logged, the closest match to
+    today's behavior); `normalDayHours` and the per-day balance go away.
+  - **Open questions**:
+    1. Is a project the same thing as a booking code (1:1), or can several projects book to
+       one code?
+    2. Public holidays / vacation / sick days: does bookable drop (e.g. 32h), or are they
+       booked to a leave code and the week stays 40h?
+    3. Lunch: always exactly 30m on office days, regardless of length? Never deducted at home?
+    4. Mixed days (office in the morning, home in the afternoon) — needed, or pick one?
+    5. Weekend work: ignore, or count toward that week's worked total?
+    6. Office arrive/leave: separate "arrive"/"leave" actions, or default them from the first
+       and last segment and let me correct them?
+    7. Bank: start at zero, or seed from the current flex balance? Any cap or periodic reset?
+    8. Should the app propose bookings (helper above), or only record what I booked?
+
 ## 8. Suggested build order for Claude Code
 
 1. Scaffold PWA shell: manifest, service worker, IndexedDB wrapper, shared theme tokens.
@@ -728,5 +804,5 @@ These came up in the process and were deliberately deferred — listed here so t
    principle: Matrix and Calendar both need to read the *same* task records the Tasks view
    writes, not copies.
 5. ~~GitHub sync: serverless proxy + conflict strategy~~ — superseded by Drive backup (§6.1)
-   for personal data and the online-only Cloudflare backend (§6.2) for work data.
+   for personal data. (The online-only Cloudflare backend for work data, §6.2, is shelved.)
 6. Settings + home view, once the rest is stable enough to know what belongs there.
