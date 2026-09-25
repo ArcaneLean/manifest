@@ -1,8 +1,10 @@
-import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight, ArchiveRestore } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 import { useDriveBackup } from "../hooks/useDriveBackup.js";
 import { DriveBackupButton } from "../components/DriveBackupButton.jsx";
+import { BackupsModal } from "../components/BackupsModal.jsx";
 
 // Day Planner is archived (unused) — its tile was removed here. See ARCHITECTURE.md §5/§7.
 const APPS = [
@@ -25,6 +27,7 @@ export default function LauncherView({ onOpen }) {
   const dateStr = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).toLowerCase();
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
   const drive = useDriveBackup();
+  const [backupsOpen, setBackupsOpen] = useState(false);
 
   return (
     <div
@@ -48,16 +51,21 @@ export default function LauncherView({ onOpen }) {
             <div style={{ fontSize: "20px", fontWeight: 600, color: COLORS.amber, letterSpacing: "0.5px" }}>
               ~/manifest
             </div>
-            <DriveBackupButton
-              configured={drive.configured}
-              connected={drive.connected}
-              status={drive.status}
-              error={drive.error}
-              lastBackupAt={drive.lastBackupAt}
-              onConnect={drive.connect}
-              onBackupNow={drive.backupNow}
-              onDisconnect={drive.disconnect}
-            />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => setBackupsOpen(true)} title="export / restore backups" style={headerIconButton}>
+                <ArchiveRestore size={13} color={COLORS.dim} />
+              </button>
+              <DriveBackupButton
+                configured={drive.configured}
+                connected={drive.connected}
+                status={drive.status}
+                error={drive.error}
+                lastBackupAt={drive.lastBackupAt}
+                onConnect={drive.connect}
+                onBackupNow={drive.backupNow}
+                onDisconnect={drive.disconnect}
+              />
+            </div>
           </div>
         </div>
 
@@ -92,6 +100,22 @@ export default function LauncherView({ onOpen }) {
           ))}
         </div>
       </div>
+      {backupsOpen && (
+        <BackupsModal driveConfigured={drive.configured} driveConnected={drive.connected} onClose={() => setBackupsOpen(false)} />
+      )}
     </div>
   );
 }
+
+// Same icon-button styling as DriveBackupButton.
+const headerIconButton = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "26px",
+  height: "26px",
+  background: "none",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "6px",
+  cursor: "pointer",
+};

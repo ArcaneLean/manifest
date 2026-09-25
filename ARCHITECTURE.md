@@ -7,9 +7,11 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 
 - Android-first. Desktop (Fedora personal laptop, Windows work laptop) is a nice-to-have that
   falls out for free by being a PWA rather than a native app.
-- Local-first: the app must be fully usable offline. IndexedDB is the source of truth on-device,
-  not a cache in front of a server.
-- No dedicated backend server. GitHub acts as a sync/backup target, not a live database.
+- Local-first for personal data: the personal apps must be fully usable offline. IndexedDB is
+  the source of truth on-device, not a cache in front of a server.
+- Work data is the exception: work tasks and hours are online-only, stored server-side in a
+  Cloudflare Worker + D1 so they're reachable from the work laptop and queryable/editable by
+  Claude over MCP — see §6. Nothing personal goes to that backend.
 - FOSS/self-hosted orientation — avoid vendor lock-in where reasonable.
 - No home-screen widgets: confirmed PWAs can't do this on Android or iOS today. A native
   companion widget is a separate, later decision if ever wanted — not part of this build.
@@ -24,10 +26,11 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 |---|---|---|
 | UI | React, installable PWA | single codebase, works on Android + any desktop browser |
 | Local storage | IndexedDB | source of truth, offline-first, survives reload |
-| Hosting | GitHub Pages | free, static, fits FOSS orientation |
+| Hosting | GitHub Pages → moving to a Cloudflare Worker serving the built PWA as static assets (§6) | same origin as the work API, so Cloudflare Access protects both with no CORS/token plumbing; still auto-deployed from `main` by GitHub Actions |
+| Work backend *(planned)* | Cloudflare Worker (`/api/*` REST for the PWA, `/mcp` for Claude) + D1 | online-only work tasks + hours, one shared domain layer behind both front doors — see §6 |
 | Updates | Service worker | detects new deployed assets, prompts refresh — no separate release/versioning step needed |
-| Sync/backup | Per-device JSON snapshot pushed to Google Drive's hidden `appDataFolder` | no backend/proxy needed (unlike a GitHub PAT, a Drive OAuth token is safe client-side); reuses the OAuth plumbing already built for Google Calendar |
-| Conflict handling | N/A — deliberately not sync | each device only ever reads/writes its own file, so there's nothing to merge — see §6 |
+| Sync/backup (personal) | Per-device JSON snapshot pushed to Google Drive's hidden `appDataFolder`, with manual whole-dataset restore | no backend/proxy needed (unlike a GitHub PAT, a Drive OAuth token is safe client-side); reuses the OAuth plumbing already built for Google Calendar |
+| Conflict handling | N/A — deliberately not sync | personal data: each device only ever writes its own file, restore is a manual replace, never a merge. Work data: one server-side copy, so nothing to merge either — see §6 |
 
 ## 3. Visual language ("Terminal Log" theme)
 
@@ -169,21 +172,96 @@ component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolida
 shared modules is the first real task once this moves into Claude Code — not optional cleanup,
 since several views already depend on the *same* underlying task records.
 
-## 6. Sync design (resolved — see §7 "Drive backup")
+## 6. Data split: local-first personal apps, online-only work apps
 
-- IndexedDB is the only thing the app reads/writes during normal use.
+### 6.1 Personal data (unchanged)
+
+- IndexedDB is the only thing the personal apps (Task manager, Countdowns, Habits, Shortlist,
+  Weather) read/write during normal use.
 - Periodically (or on-demand), a full snapshot is pushed to Google Drive — one file per
   device, not one shared file, so this is **backup, not cross-device sync**: opening the app
   on a second device does not pull the first device's data. This was a deliberate choice over
   a shared-file/pull design, made specifically to avoid needing conflict resolution (merging
-  the same record edited on two devices while offline) — a real gap that was never designed
-  for the earlier GitHub-repo plan and is sidestepped entirely by never reading another
-  device's file. If cross-device access is wanted later, that needs a real merge strategy
-  (last-write-wins with a per-record timestamp is the simplest starting point) — not
-  implemented, and a separate decision from the backup mechanism here.
-- The original GitHub-repo-via-serverless-proxy plan (still described in prior revisions of
-  this doc) was superseded by Drive specifically because Drive tokens are safe to hold
-  client-side, unlike a GitHub PAT — so no backend/proxy needs to be built and hosted.
+  the same record edited on two devices while offline). Restore (§7 "Drive backup") is a
+  manual, whole-dataset replace from any device's file, never a merge, so it doesn't reopen
+  that problem.
+- The original GitHub-repo-via-serverless-proxy plan was superseded by Drive specifically
+  because Drive tokens are safe to hold client-side, unlike a GitHub PAT.
+
+### 6.2 Work data: online-only on Cloudflare (planned)
+
+**Why**: work tasks and hours need to be reachable from the work laptop and queryable/editable
+by Claude (AI agents over MCP). Giving a second writer (an agent) access to local-first data
+would force real cross-device sync with conflict resolution — exactly what §6.1 avoids. Making
+*only* the work data online-only sidesteps that: a single server-side copy has nothing to
+merge, and an agent's edits are visible on the next load. The work laptop is online whenever
+it's in use, and clocking in/out only while online is acceptable.
+
+**Scope**: Hours (`worklog`, `projects`, and the `normalDayHours` setting, which moves out of
+`localStorage` so every device and Claude compute the same flex balance) plus a new, separate
+**Work tasks** app. Personal tasks, recurring templates and Shortlist stay local and are not
+reachable by agents.
+
+**Work tasks is a fork, not a mode**: its requirements are expected to diverge from the
+personal Task manager, so it gets its own app (`WorkTasksApp`) with its own views *copied* from
+Tasks, not shared components growing `if (work)` branches. Only primitives stay shared
+(`Checkbox`, `TagChip`, `Toggle`, `ColorPicker`, theme). It has its own tags, and starts without
+templates/recurrence/Shortlist — add them only if the work use case asks for them.
+
+**Architecture**:
+- **One Worker, two front doors, one domain layer.** `/api/*` (REST, for the PWA) and `/mcp`
+  (MCP server, via Cloudflare's `agents` SDK) both call the same shared functions — never raw
+  row writes from the MCP side. Logic that today lives in React hooks (e.g. `useHours`'
+  `clockIn`/`switchSegment`/`clockOut` segment-building) moves into pure shared modules imported
+  by both the PWA and the Worker, so an agent's `clock_in` behaves exactly like the button.
+- **Storage: D1** (SQLite). Agents need filtered queries ("work tasks due this week tagged
+  X"), which SQL gives directly; D1 Time Travel (point-in-time restore, 30 days) is the safety
+  net for bad agent edits and replaces Drive backup for this data. Tables: `projects`,
+  `worklog`, `settings`, `work_tasks`, `work_tags`, plus an `audit_log` (who — `pwa` or
+  `mcp` — changed what, before/after). KV (eventually consistent) and R2 (blobs) don't fit
+  edited, queried records.
+- **MCP tools are actions, not table CRUD**: Hours — `get_status`, `clock_in`,
+  `switch_project`, `clock_out`, `get_balance`, `get_week_summary` (per project), `edit_day`;
+  Work tasks — `list_tasks(filters)`, `create_task`, `update_task`, `complete_task`. Soft
+  delete only for agents.
+- **Auth**: the PWA is served from the same Worker (static assets), so **Cloudflare Access**
+  (free for a single user) protects the PWA and `/api/*` on one origin with no CORS or token
+  handling. `/mcp` uses OAuth via `workers-oauth-provider` with Google as the upstream
+  identity (reusing the existing OAuth client), allow-listed to the owner's account — required
+  for Claude.ai custom connectors; Claude Code could also use a bearer token.
+- **PWA side**: online versions of `hoursRepo.js`/`projectsRepo.js` with the same function
+  signatures, so `HoursView`/`ProjectsView` barely change; loading/error states (views
+  currently assume instant local reads), rollback of optimistic updates on failure, and the
+  Work/Hours launcher tiles disabled while offline. A one-time import moves existing
+  `worklog`/`projects` from IndexedDB into D1, after which those stores are dropped from the
+  Drive snapshot.
+
+**Hosting + CI/CD**: GitHub Actions keeps auto-deploying on push to `main`: `npm ci` →
+`npm run build` → `wrangler d1 migrations apply --remote` → `wrangler deploy` (Worker + built
+PWA together), with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repo secrets. Per-PR
+preview URLs (`wrangler versions upload`) share the production D1 binding, so previews would
+write to real data — only enable them with a separate preview database. Starting on
+`workers.dev`; a custom domain is optional.
+
+**Origin move caveat**: IndexedDB, `localStorage` (including `deviceId` and view prefs) are
+per-origin, so the app on the new domain starts with **empty personal data**. Drive's
+`appDataFolder` is scoped to the OAuth client, not the origin, so the old backups stay visible
+— hence restore (step 1 below) ships before the move. The new origin must also be added to the
+Google OAuth client's authorized JavaScript origins (same client id), and the PWA reinstalled
+on each device. View prefs in `localStorage` aren't in the snapshot and simply reset.
+
+**Build order**:
+1. **Restore** from Drive (any device's backup) or a local file, plus export to file —
+   *implemented*, see §7 "Drive backup".
+2. **Hosting move**: Worker serving the PWA, new `deploy.yml`, Cloudflare Access; restore
+   personal data on each device from Drive/file.
+3. **Hours online**: D1 schema + migrations, REST API, shared hours logic, online repos,
+   `normalDayHours` server-side, one-time import of existing worklog/projects.
+4. **MCP server** with the Hours tools, OAuth, audit log.
+5. **Work tasks app** (forked from Tasks) + its API and MCP tools.
+
+**Still to check**: employer policy on keeping work data in a personal Cloudflare account and
+exposing it to Claude.
 
 ## 7. Open decisions carried over from prototyping
 
@@ -528,8 +606,9 @@ These came up in the process and were deliberately deferred — listed here so t
   is requested per token client, not baked into the client id itself).
   - **Per-device, not shared**: a random id (`crypto.randomUUID()`, `src/lib/deviceId.js`,
     persisted in `localStorage` as device identity rather than app data) names each device's
-    backup file (`manifest-backup-{deviceId}.json`). The app never reads any file back —
-    push-only — so two devices never need to merge; see §6 for why that was chosen over a
+    backup file (`manifest-backup-{deviceId}.json`). Backups are push-only; reading a file
+    back only happens through a manual restore (below), which replaces rather than merges —
+    so two devices never need to merge; see §6.1 for why that was chosen over a
     pull/shared-file design.
   - **Storage location**: Drive's `appDataFolder`, a hidden space scoped to the app itself —
     invisible in the user's normal Drive UI, no folder-picker needed, and not readable by other
@@ -539,7 +618,7 @@ These came up in the process and were deliberately deferred — listed here so t
   - **Snapshot shape**: `src/lib/backupSnapshot.js` dumps every IndexedDB object store into one
     JSON blob (`{version, exportedAt, stores}`), reading `db.objectStoreNames` dynamically
     rather than a hardcoded list so a newly added store is included with no separate list to
-    maintain. There's no restore path yet — see "Still open" below.
+    maintain.
   - **Trigger + cadence**: `src/hooks/useDriveBackup.js` pushes once immediately on connect
     (interactive, requesting consent) and silently every 15 minutes thereafter while the app is
     open and `connected` is true (persisted flag, same "reconnect silently on load" pattern as
@@ -550,10 +629,24 @@ These came up in the process and were deliberately deferred — listed here so t
     plain click connects (first time) or triggers an immediate backup (once connected); a
     right-click disconnects (revokes the OAuth grant, does not delete the Drive file or clear
     `lastBackupAt`) — same deliberately-harder-to-hit placement as Calendar's disconnect.
-  - **Still open**: no restore/import path (reading a device's own or another device's snapshot
-    back into IndexedDB) — this ships backup only. Also no UI surfacing *which* device a backup
-    belongs to beyond the opaque id in the filename, since there's no multi-device management
-    view yet either.
+  - **Restore + export (implemented)**: `BackupsModal.jsx`, opened from an always-visible
+    archive icon in the launcher header (shown even without `VITE_GOOGLE_CLIENT_ID`, since the
+    file path doesn't need Google). Built primarily for the Cloudflare hosting move (§6.2), where
+    the new origin starts with empty IndexedDB and a fresh `deviceId`.
+    - Sources: every device's Drive file (`listBackupFiles` in `driveBackup.js`, newest first,
+      "this device" vs. `device <id prefix>`; the consent popup is shown if Drive isn't connected
+      yet), or a local JSON file. Export writes the same snapshot to a downloaded file
+      (`backupFile.js`), so moving data never depends on Google being configured.
+    - Before replacing anything, a `ConfirmDialog` shows the source and per-store record counts
+      (`summarizeSnapshot`). `restoreBackupSnapshot` (`backupSnapshot.js`) then clears and
+      refills every restorable store inside **one readwrite transaction** — a bad record aborts
+      the whole restore and leaves existing data untouched (explicitly aborted on the
+      synchronous `put()` DataError path, which IndexedDB doesn't abort on its own). The page
+      reloads afterwards since every hook holds its own in-memory copy.
+    - Rebuildable caches (`gcalEvents`, `gcalMeta`, `weatherCache`) are never restored — they
+      refill from source. Stores the snapshot lacks are left untouched. Snapshots newer than
+      `SNAPSHOT_VERSION` or not shaped like a snapshot are rejected.
+    - Device labels are still just the id prefix — there's no device naming.
 - **Settings view**: doesn't exist yet. Needed for at least: default week hour target, GitHub
   sync configuration, theme (if made configurable at all).
 - **Home/dashboard view (built)**: `LauncherView.jsx` is now the landing screen — an app
@@ -634,5 +727,6 @@ These came up in the process and were deliberately deferred — listed here so t
 4. Wire cross-view relationships that are currently "lens over the same data" only in
    principle: Matrix and Calendar both need to read the *same* task records the Tasks view
    writes, not copies.
-5. GitHub sync: serverless proxy + conflict strategy, once local-only usage feels solid.
+5. ~~GitHub sync: serverless proxy + conflict strategy~~ — superseded by Drive backup (§6.1)
+   for personal data and the online-only Cloudflare backend (§6.2) for work data.
 6. Settings + home view, once the rest is stable enough to know what belongs there.
