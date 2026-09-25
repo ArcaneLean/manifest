@@ -1,0 +1,39 @@
+name: Deploy to Cloudflare
+
+# Runs alongside deploy.yml (GitHub Pages) until personal data has been
+# restored on the new origin — see ARCHITECTURE.md §6.2 "Origin move caveat".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Wrangler 4 requires Node 22+.
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # Same repo variable as deploy.yml; the new origin must also be
+          # added to the OAuth client's authorized JavaScript origins.
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+      # API token from the "Edit Cloudflare Workers" template, plus the
+      # account id, both stored as repo secrets.
+      - run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

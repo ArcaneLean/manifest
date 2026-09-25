@@ -1,0 +1,16 @@
+// Cloudflare Worker serving the built PWA as static assets (ARCHITECTURE.md
+// §6.2, build step 2). No Worker script yet: an assets-only Worker is enough
+// until the work API (/api/*, /mcp) lands. Deployed by
+// .github/workflows/deploy-cloudflare.yml; `npm run build && npx wrangler
+// deploy` does the same by hand.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "manifest",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    // No not_found_handling: the app has no URL routes, and serving
+    // index.html for unknown paths would break its relative (base "./")
+    // asset URLs at nested paths.
+    "directory": "./dist"
+  }
+}

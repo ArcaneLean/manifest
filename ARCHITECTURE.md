@@ -254,7 +254,11 @@ on each device. View prefs in `localStorage` aren't in the snapshot and simply r
 1. **Restore** from Drive (any device's backup) or a local file, plus export to file —
    *implemented*, see §7 "Drive backup".
 2. **Hosting move**: Worker serving the PWA, new `deploy.yml`, Cloudflare Access; restore
-   personal data on each device from Drive/file.
+   personal data on each device from Drive/file. *Worker config + deploy workflow in place*:
+   `wrangler.jsonc` (assets-only Worker serving `dist/`) and
+   `.github/workflows/deploy-cloudflare.yml` (Node 22, as Wrangler 4 requires), running
+   alongside the GitHub Pages deploy until data is restored on every device. Remaining:
+   the repo secrets, Cloudflare Access, the new OAuth origin, restoring, then retiring Pages.
 3. **Hours online**: D1 schema + migrations, REST API, shared hours logic, online repos,
    `normalDayHours` server-side, one-time import of existing worklog/projects.
 4. **MCP server** with the Hours tools, OAuth, audit log.
