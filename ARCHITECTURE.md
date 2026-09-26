@@ -726,34 +726,45 @@ These came up in the process and were deliberately deferred — listed here so t
     store only), Shortlist also covers habits, so it's its own top-level launcher app rather than
     a 5th Task Manager tab.
 
-- **Hours 2.0 (design draft, rev 2 — not built)**: a ground-up redesign of Hours around
+- **Hours 2.0 (design draft, rev 3 — not built)**: a ground-up redesign of Hours around
   *weeks* and *booking codes*, replacing the per-day `normalDayHours` flex balance. Still
   local-first (IndexedDB + Drive snapshot) now that §6.2 is shelved.
   - **Projects and booking codes**: a project has **one or more booking codes**, e.g.
     Blenddata → `internal`; HQPack → `billable`, `unbillable`; Moving Intelligence →
     `billable`, `unbillable`. The booking code is what's booked and what the bank is kept
-    per. Proposal: **log against booking codes**, not bare projects. The clock-in/switch
+    per. **Decided: log against booking codes**, not bare projects. The clock-in/switch
     picker shows `project · code` chips (a project with one code shows just the project), since
     whether work is billable is known while doing it, not something to reconstruct on Friday.
   - **Three different numbers, deliberately kept apart**:
     - **Paid** (what I'm entitled to get paid for):
       - *Office time* is `out − in − 30m`. In/out is the office **arrival and departure**,
         recorded separately from logging (arrive 08:00, first log 08:20 → paid from 08:00).
-        The 30m lunch is always deducted, however long the actual break was.
+        The 30m lunch is deducted however long the actual break was, but only if I took the
+        office lunch break. That's a **per-day toggle** (default on), because a short visit,
+        e.g. a morning at the office and the afternoon at home, may not include lunch.
       - *Home time* is **only logged work segments**. Breaks and untracked gaps don't count.
         This is on purpose, as motivation to keep home breaks short.
       - A day has **at most one office visit**. Paid = office span − 30m + logged work outside
-        that span. A pure home day has no visit, so paid = logged. A pure office day is the
-        span. A **mixed day** (office in the morning, home in the afternoon) is the same
+        that span (the 30m only when the lunch toggle is on). A pure home day has no visit,
+        so paid = logged. A pure office day is the span. A **mixed day** (office in the
+        morning, home in the afternoon) is the same
         formula with no extra mode or flag.
     - **Logged**: the sum of work segments, per booking code. It says *where* time went.
       On office days it's usually below paid, and that's fine.
     - **Booked**: what goes into the employer's system. **40h/week**, 8h per workday in 30m
       steps, per booking code. No weekends: they're never shown or counted.
-  - **Earned per code** (the bridge between paid and booked): paid time is attributed to codes
-    in proportion to that week's logged time per code, i.e.
-    `earned[code] = paid_week × logged[code] / logged_week`. The unlogged office gap is
-    spread proportionally rather than lost. `Σ earned = paid`.
+  - **Earned per code** (the bridge between paid and booked): the week's **gap**
+    (`paid − logged`, mostly unlogged office time; it can be negative, e.g. a fully logged
+    office day where the lunch deduction brings paid below logged) is attributed to codes in
+    one of **two modes**, chosen per week at booking time:
+    - *Proportional*: `earned[code] = logged[code] + gap × logged[code] / logged_week`.
+    - *Single code*: the whole gap goes to one selected code (e.g. Blenddata internal).
+      `earned[code] = logged[code] (+ gap for the selected code)`.
+
+    Either way `Σ earned = paid`. The booking screen shows **both results side by side**
+    (earned, proposed booking and bank-after per code) so the choice is made while seeing
+    its effect. The chosen mode is stored with the booking, and the last-used mode and code
+    become the default for next week.
   - **Bank, per booking code**: `bank[code] = opening[code] + Σ over booked weeks
     (earned[code] − booked[code])`. The total bank is the sum over codes (= Σ paid − Σ
     booked). A week only affects the bank once its booking is **confirmed**. Before that it
@@ -769,11 +780,13 @@ These came up in the process and were deliberately deferred — listed here so t
     - *Edit*: a days × codes grid with ±30m steppers. Each day must total 8h (0 on a leave
       day), and the week must total the bookable hours. The resulting per-code bank change is
       shown live.
-    - *Confirm*: stores the lines plus the `earned` snapshot the bank math used. If a day in
+    - *Confirm*: stores the lines, the gap mode, and the `earned` snapshot the bank math
+      used. If a day in
       a booked week is edited later, the week gets a "changed since booked" flag with an
       option to re-confirm, so the bank never silently shifts under a booking I've already
       entered at work.
-  - **Leave** (whether leave also has to be *booked* is still unknown): a day can be marked
+  - **Leave** (left open on purpose: whether leave also has to be *booked* is unknown, and the
+    design supports both): a day can be marked
     `leave`. Either way it's **bank-neutral**. Without a leave code, bookable drops by 8h and
     paid adds 0. With a leave code, the day is booked 8h to it and paid gets 8h. So this can be
     decided later without affecting the bank. For now leave just reduces bookable, and
@@ -803,28 +816,26 @@ These came up in the process and were deliberately deferred — listed here so t
       date: string;
       officeIn?: string | null;  // "HH:MM", office arrival (not "leave", to avoid clashing
       officeOut?: string | null; //  with leave days)
+      officeLunch?: boolean;     // deduct the 30m office lunch; default true when officeIn set
       dayOff?: "leave" | null;
       segments: { start: string; end: string | null; codeId: string | null }[]; // null = break
     }
     interface WeekBooking {                              // new `bookings` store, key weekStart
       weekStart: string;                                 // Monday ISO
       lines: { date: string; codeId: string; minutes: number }[]; // 30m multiples
+      gapMode: { kind: "proportional" } | { kind: "single"; codeId: string };
       earned: Record<string, number>;                    // codeId -> minutes, at confirm time
       confirmedAt: number | null;                        // null = draft
     }
-    // Settings: bookable/week (40h), office lunch (30m),
+    // Settings: bookable/week (40h), office lunch length (30m), last-used gapMode,
     //           opening bank { weekStart, perCode: Record<codeId, minutes> }.
     ```
     Migration: each existing project gets one default booking code, and segments'
     `projectId` maps to that code. Old entries become home days (no office visit).
     `normalDayHours` and the per-day balance go away.
   - **Still open**:
-    1. Logging against codes (billable/unbillable picked at clock-in) rather than projects: OK?
-    2. Unlogged office time spread proportionally over codes, or always to one default code
-       (e.g. Blenddata internal)?
-    3. Is lunch deducted on a short office visit (e.g. a half day at the office, the rest at
-       home), or only above some length?
-    4. Leave: find out whether it has to be booked. The design works either way (see above).
+    1. Leave: whether it also has to be booked. The design works either way (see above), so
+       it stays open until that's known.
 
 ## 8. Suggested build order for Claude Code
 
