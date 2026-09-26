@@ -7,7 +7,7 @@ import { nowHHMM, timeToMinutes } from "../../lib/timeUtils.js";
 import { openSegment, paidMinutes, loggedMinutes, isAtOffice } from "../../lib/hours2/day.js";
 import { dayLabel } from "../../lib/hours2/week.js";
 import { Section, PickChip, primaryBtnStyle, secondaryBtnStyle, timeInputStyle, linkStyle, disabledStyle, fmt } from "./ui.jsx";
-import { codeLabel, codeColor, pickableCodes } from "./codes.js";
+import { codeLabel, codeColor, pickableCodes, taskTitle } from "./codes.js";
 
 // Time input + (optionally) an explicit code-or-break picker. No default
 // selection, so a quick clock-in can never silently land on the wrong code.
@@ -106,7 +106,10 @@ export function TodayPanel({ date, day, now, store, onOpenDay }) {
       <div>
         <div style={{ fontSize: "12.5px", marginBottom: "8px", paddingTop: "6px" }}>
           {open.codeId ? (
-            <span style={{ color: codeColor(open.codeId, codes, projects) }}>{codeLabel(open.codeId, codes, projects)}</span>
+            <span style={{ color: codeColor(open.codeId, codes, projects) }}>
+              {codeLabel(open.codeId, codes, projects)}
+              {taskTitle(open.taskId, store.workTasks) && <span style={{ color: COLORS.text }}> · {taskTitle(open.taskId, store.workTasks)}</span>}
+            </span>
           ) : (
             <span style={{ color: COLORS.dim }}>break</span>
           )}{" "}

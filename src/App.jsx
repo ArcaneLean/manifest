@@ -7,6 +7,7 @@ import HoursApp from "./apps/HoursApp.jsx";
 import HabitsApp from "./apps/HabitsApp.jsx";
 import ShortlistApp from "./apps/ShortlistApp.jsx";
 import WeatherApp from "./apps/WeatherApp.jsx";
+import WorkTasksApp from "./apps/WorkTasksApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
 // Day Planner (DayPlannerApp.jsx) is archived — unused, kept unwired. See
@@ -14,6 +15,7 @@ import { UpdatePrompt } from "./UpdatePrompt.jsx";
 const APPS = {
   taskmanager: TaskManagerApp,
   countdowns: CountdownsApp,
+  work: WorkTasksApp,
   hours: HoursApp,
   habits: HabitsApp,
   shortlist: ShortlistApp,

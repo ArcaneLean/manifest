@@ -40,6 +40,11 @@ beforeAll(async () => {
 });
 
 describe("DB v12 upgrade", () => {
+  it("also creates the v13 Work tasks stores", async () => {
+    const db = await getDB();
+    for (const name of ["workTasks", "workProjects", "workTags"]) expect(db.objectStoreNames.contains(name)).toBe(true);
+  });
+
   it("migrates worklog segments to codes and keeps logged totals", async () => {
     const db = await getDB();
     const codes = await db.getAll("bookingcodes");

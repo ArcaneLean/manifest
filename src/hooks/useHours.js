@@ -51,8 +51,13 @@ export function useHours() {
 
   // Starts logging (also resumes after clocking out, e.g. an evening at
   // home after an office day): appends an open segment on `codeId`.
-  const clockIn = (date, time, codeId) =>
-    updateDay(date, (d) => ({ ...d, segments: [...closeOpen(d.segments || [], time), { start: time, end: null, codeId }] }));
+  // `taskId` is set when started from Work tasks (ARCHITECTURE.md §7 "Work
+  // tasks") — the Hours math ignores it; it only drives per-task actuals.
+  const clockIn = (date, time, codeId, taskId) =>
+    updateDay(date, (d) => ({
+      ...d,
+      segments: [...closeOpen(d.segments || [], time), { start: time, end: null, codeId, ...(taskId ? { taskId } : {}) }],
+    }));
 
   // Closes the open segment and opens one on a different code/break.
   const switchSegment = clockIn;

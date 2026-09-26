@@ -10,7 +10,7 @@ import { isConfirmed } from "../../lib/hours2/bank.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.jsx";
 import { Page, Header, Section, Stats, PickChip, BracketCheck, Dot, timeInputStyle, primaryBtnStyle, secondaryBtnStyle, linkStyle, fmt, fmtSigned, signColor } from "./ui.jsx";
 import { TodayPanel } from "./TodayPanel.jsx";
-import { codeLabel, codeColor, pickableCodes, sortCodeIds } from "./codes.js";
+import { codeLabel, codeColor, pickableCodes, sortCodeIds, taskTitle } from "./codes.js";
 import { clockContext } from "./model.js";
 
 function SegmentRow({ seg, store, onChange, onRemove }) {
@@ -22,7 +22,12 @@ function SegmentRow({ seg, store, onChange, onRemove }) {
       <Dot color={seg.codeId ? codeColor(seg.codeId, codes, projects) : COLORS.dim} />
       <select
         value={seg.codeId || ""}
-        onChange={(e) => onChange({ ...seg, codeId: e.target.value || null })}
+        onChange={(e) => {
+          const codeId = e.target.value || null;
+          // A break isn't work on a task, so it drops the task link.
+          const { taskId, ...rest } = seg;
+          onChange(codeId ? { ...seg, codeId } : { ...rest, codeId });
+        }}
         style={{ ...timeInputStyle, flex: 1, padding: "6px 4px", minWidth: 0 }}
       >
         <option value="">break</option>
@@ -44,7 +49,7 @@ function SegmentRow({ seg, store, onChange, onRemove }) {
 }
 
 export default function DayView({ date, store, now, go, replace }) {
-  const { worklog, codes, projects, settings, updateDay, clearDay, bookings } = store;
+  const { worklog, codes, projects, settings, updateDay, clearDay, bookings, workTasks } = store;
   const ctx = clockContext(now);
   const isToday = date === ctx.todayISO;
   const day = worklog[date] || { date, segments: [] };
@@ -201,7 +206,10 @@ export default function DayView({ date, store, now, go, replace }) {
               <span style={{ color: COLORS.dim, width: "96px" }}>
                 {seg.start}–{seg.end || "…"}
               </span>
-              <span style={{ flex: 1, color: seg.codeId ? COLORS.text : COLORS.dim }}>{seg.codeId ? codeLabel(seg.codeId, codes, projects) : "break"}</span>
+              <span style={{ flex: 1, minWidth: 0, color: seg.codeId ? COLORS.text : COLORS.dim }}>
+                {seg.codeId ? codeLabel(seg.codeId, codes, projects) : "break"}
+                {seg.codeId && taskTitle(seg.taskId, workTasks) && <span style={{ color: COLORS.dim }}> · {taskTitle(seg.taskId, workTasks)}</span>}
+              </span>
             </div>
           ))
         )}

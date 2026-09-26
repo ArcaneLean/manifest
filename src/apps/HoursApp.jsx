@@ -7,6 +7,7 @@ import { useProjects } from "../hooks/useProjects.js";
 import { useBookingCodes } from "../hooks/useBookingCodes.js";
 import { useBookings } from "../hooks/useBookings.js";
 import { useHoursSettings } from "../hooks/useHoursSettings.js";
+import { useWorkTasks } from "../hooks/useWorkTasks.js";
 import { isoWeekNumber, dayLabel } from "../lib/hours2/week.js";
 import ProjectsView from "../views/ProjectsView.jsx";
 import WeeksView from "../views/hours/WeeksView.jsx";
@@ -45,12 +46,15 @@ export default function HoursApp({ onHome }) {
   const codes = useBookingCodes();
   const bookings = useBookings();
   const settings = useHoursSettings();
+  // Only for showing which work task a segment was started from.
+  const work = useWorkTasks();
   const store = {
     ...hours,
     ...projects,
     ...codes,
     ...bookings,
     ...settings,
+    workTasks: work.tasks,
     projectsLoading: projects.loading,
     loading: hours.loading || projects.loading || codes.loading || bookings.loading || settings.loading,
   };
