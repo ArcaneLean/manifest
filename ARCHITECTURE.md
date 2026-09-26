@@ -115,6 +115,7 @@ interface WorkSegment {
   start: string;                  // "HH:MM"
   end: string | null;             // null while this segment is open (in progress)
   codeId: string | null;          // BookingCode id; null = break
+  taskId?: string;                // WorkTask id, set when started from Work tasks (§7)
 }
 
 interface Project {
@@ -147,6 +148,38 @@ interface HoursSettings {      // `hoursSettings` store, single row id "settings
 }
 ```
 
+```ts
+interface WorkProject {        // `workProjects` store — Work tasks (§7), NOT Hours' `projects`
+  id: string;
+  name: string;                // "MDS"
+  color: string;               // same curated 8-color palette as Tag
+  codeId?: string | null;      // optional link to a Hours BookingCode ("Blenddata · internal")
+  status: "active" | "on-hold" | "done";
+  archived?: boolean;
+  createdAt: number;
+}
+
+interface WorkTask {           // `workTasks` store
+  id: string;
+  projectId: string | null;    // null = inbox
+  title: string;
+  notes?: string;
+  status: "todo" | "doing" | "waiting" | "done" | "dropped";
+  waitingOn?: string | null;   // who/what, only while status = "waiting"
+  priority: "high" | "medium" | "low";
+  effortMin?: number | null;   // estimate, multiple of 30
+  startDate?: string | null;   // same meaning as Task.startDate
+  dueDate?: string | null;
+  hardDeadline?: boolean;      // fixed external deadline vs soft target
+  checklist?: { id: string; text: string; done: boolean }[];
+  link?: string | null;        // ticket/PR/doc URL
+  tags: string[];              // WorkTag ids (`workTags` store, same shape as Tag)
+  createdAt: number;
+  statusChangedAt: number;
+  completedAt: number | null;  // set on "done"; never auto-purged
+}
+```
+
 Hours' numbers (paid, logged, earned, booked, the per-code bank) are all derived at render
 time by the pure modules in `src/lib/hours2/` — nothing derived is stored except each
 booking's `earned` snapshot. See §7 "Hours 2.0" for the rules.
@@ -175,6 +208,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Hours | Weeks → Week → Day, Booking, Bank; Projects | 2-tab switch (weeks/projects) + drill-down stack | office arrive/leave + clock in/out per booking code, weekly bookings, per-code bank — see §7 "Hours 2.0" |
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
 | Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
+| Work tasks | Now, Projects (→ project), Board, Log | bottom tab bar (4 tabs) + project drill-down | separate from the personal Task manager (a fork, not a mode); projects link to Hours booking codes and a task can start the Hours clock — see §7 "Work tasks" |
 | Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
 | Weather | Weather | none (single view) | cycling forecast cross-checked across independent models for the user's recurring ride windows — see §7 "Weather" |
 | *(not built)* | — | — | settings — see §7 |
@@ -190,6 +224,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Tags | tags | tags | CRUD, 8-color curated palette |
 | Hours (weeks/week/day/booking/bank) | worklog, projects, bookingcodes, bookings, hoursSettings | worklog, bookings, hoursSettings | `src/views/hours/`; all Hours data loaded once in `HoursApp` and passed down |
 | Projects | projects, bookingcodes (+ worklog/bookings to tell which codes are used) | projects, bookingcodes | CRUD, 8-color curated palette (same `ColorPicker`/palette as Tags), plus each project's booking codes |
+| Work (now/projects/board/log) | workTasks, workProjects, workTags, worklog, projects, bookingcodes | workTasks, workProjects, workTags, worklog (start/stop working) | `src/views/work/`; all data loaded once in `WorkTasksApp` and passed down, like Hours |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -219,6 +254,11 @@ since several views already depend on the *same* underlying task records.
 > (and in the Drive snapshot) and is being redesigned in place instead — see §7 "Hours 2.0".
 > Everything below is kept only as a parked reference in case it's revisited; don't build from
 > it without re-deciding.
+>
+> **Update:** the *Work tasks app itself* has since been built — local-first in IndexedDB like
+> everything else, not online — see §7 "Work tasks". The rest of this plan (Worker, D1, MCP,
+> hosting move) is still shelved. Its domain logic lives in pure modules (`src/lib/worktasks/`)
+> so it could move server-side unchanged if this is ever revisited.
 
 **Why**: work tasks and hours need to be reachable from the work laptop and queryable/editable
 by Claude (AI agents over MCP). Giving a second writer (an agent) access to local-first data
@@ -886,6 +926,79 @@ These came up in the process and were deliberately deferred — listed here so t
   - **Still open**:
     1. Leave: whether it also has to be booked. The design works either way (see above), so
        it stays open until that's known.
+- **Work tasks (implemented)**: a separate launcher app for work, with different needs from
+  the personal Task manager. Local-first (IndexedDB + Drive snapshot) — the online plan in §6.2
+  is still shelved.
+  - **A fork, not a mode** (as §6.2 decided): its own app (`WorkTasksApp`), stores, hooks and
+    views. Shared with the personal apps: only primitives (`Checkbox`, `TagChip`,
+    `ColorPicker`, `Segmented`, `ConfirmDialog`, theme, date helpers). It also reuses Hours'
+    UI kit (`views/hours/ui.jsx`) and code-label helpers (`views/hours/codes.js`), because
+    it shows Hours booking codes. Its own tags (`workTags`). No templates, recurrence or
+    Shortlist.
+  - **Projects are their own entity**, not Hours' `projects`: Hours projects are
+    clients/employers used for booking, while work projects are finer-grained (e.g. "MDS"). A
+    work project optionally links to one Hours **booking code** (MDS → Blenddata ·
+    internal). It links to a code rather than a project because the code is what's clocked;
+    the code implies the project. Several work projects may share a code. A link to an
+    archived code is kept and shown as archived. Project status active / on-hold / done, plus
+    archive. A project with tasks can only be archived, never deleted.
+  - **Status** replaces the `done` boolean: `todo` · `doing` · `waiting` · `done` · `dropped`.
+    No separate backlog: `startDate` already hides not-yet-relevant work, and low priority
+    covers "someday". `waiting` covers blocked-on-someone *and* awaiting review/sign-off, with a
+    free-text `waitingOn` and a days-waiting counter. `dropped` (decided not to do it) is
+    kept apart from `done` so the Log only shows finished work. The row checkbox toggles
+    todo ↔ done; every other status change goes through the edit sheet.
+  - **Priority**: high / medium / low (default medium). Due dates already cover urgency at
+    work, so there's no urgent/important quadrant. The left-edge stripe is amber / muted amber
+    / dim.
+  - **Effort**: an estimate in minutes, set in 30m steps with ± steppers (the same step as
+    Hours bookings). It's summed per project and for "due this week", and shown against actual
+    time (below).
+  - **Dates**: `startDate` / `dueDate` with the personal tasks' meaning. `hardDeadline` marks a
+    fixed external deadline; overdue hard deadlines get a stronger style.
+  - **Completed tasks are never auto-purged** (unlike personal tasks' 30 days): the Log view
+    is the point of keeping them.
+  - **Views** (bottom tab bar):
+    1. **Now** (default): the working strip, then *doing*, *overdue*, *due in 7 days*, *high
+       priority*, then *waiting* (oldest first, `[005]`-style days-waiting counter). A header
+       line shows the effort due this week and the inbox count (open tasks with no project).
+       Tasks with a future `startDate` are hidden, except ones already in progress.
+    2. **Projects**: a project list (open count, estimated effort left, actual time), with a
+       drill-down to one project's tasks grouped by status. Also the project editor (name,
+       color, code link, status, archive) and work tag management.
+    3. **Board**: a status switch (todo / doing / waiting / done / dropped) instead of side-by-side
+       columns, which don't fit a phone. It has project and tag filters.
+    4. **Log**: done tasks grouped by ISO week (newest first) and project, with actual time —
+       for standups and weekly reviews.
+  - **Start working from a task** (Hours integration):
+    - ▶ on a task clocks in on its project's linked code **now**, stamping the new Hours
+      segment with `taskId`. It uses Hours' own `clockIn`, so it closes any open segment
+      (acts as a switch). If the project has no code, or the task has no project, a code
+      picker opens, with an option to remember the choice on the project. Starting a
+      `todo`/`waiting` task sets it to `doing`.
+    - A **working strip** at the top of Now shows the running segment
+      (`▶ MDS · fix ingest · since 09:12 · 42m`) with stop (Hours `clockOut`). A running
+      segment without a task (clocked in from Hours) shows just the code.
+    - Marking the running task done (or dropped) also clocks out.
+    - **Actual time per task** is derived at render time (`actualByTask`) from segments
+      carrying the task's id; nothing is stored on the task. Segments without a code (breaks)
+      never count.
+    - Hours shows the task title next to a segment in the Day view and on the today strip.
+      Switching a segment to a break in the Day editor drops its `taskId`.
+    - `taskId` is an optional extra field on a segment: no migration, and the Hours math
+      (`day.js`) only reads `codeId`, so paid/logged/booked are untouched.
+    - Both apps keep their own copy of the worklog in memory and write it to IndexedDB. Only
+      one app is ever open, and each reloads on open, so there's no locking.
+  - **Storage**: DB v13 adds `workTasks`, `workProjects`, `workTags` (plain `ensureStore`, no
+    migration). The backup snapshot dumps every store, so they're included with no snapshot
+    version bump. An older backup without them leaves them untouched on restore.
+  - **Code**: pure logic in `src/lib/worktasks/` (`model.js` status/effort rules, `select.js`
+    Now sections and sorting, `time.js` actual time and the running task, `log.js` weekly
+    grouping), each with `*.test.js`. Repos `workTasksRepo.js` / `workProjectsRepo.js` /
+    `workTagsRepo.js`, hooks `useWorkTasks` / `useWorkProjects` / `useWorkTags`, views in
+    `src/views/work/`.
+  - **Later / not built**: a weekly-review prompt (stale waiting items, idle projects);
+    exporting the Log; templates/recurrence, only if work needs them.
 
 ## 8. Suggested build order for Claude Code
 
