@@ -833,6 +833,94 @@ These came up in the process and were deliberately deferred — listed here so t
     Migration: each existing project gets one default booking code, and segments'
     `projectId` maps to that code. Old entries become home days (no office visit).
     `normalDayHours` and the per-day balance go away.
+  - **Implementation plan**: five PRs, each leaving the app working. PR 1 has no visible
+    change. From PR 2 on, data is migrated, so every later PR has to keep reading that shape.
+    1. **Test harness + pure domain module** (no UI change). The repo has no tests yet, and
+       the bank math is exactly where a silent bug would cost real money, so add `vitest`
+       (`npm test`) first. New `src/lib/hours2/`, all pure functions with no IndexedDB or
+       React, each with unit tests:
+       - `week.js`: `weekStartOf(date)` (Monday ISO), `workdays(weekStart)` (Mon–Fri),
+         week label (`wk 39 · 22–26 sep`).
+       - `day.js`: `loggedByCode(day)`, `officeMinutes(day)` (`out − in − (officeLunch ?
+         30 : 0)`), `paidMinutes(day, now?)` = office minutes + logged work clipped to
+         *outside* the office span (a segment straddling arrival/departure is split, not
+         double-counted). `now` projects an open segment on today, and a past day with an
+         open segment is reported as `incomplete`.
+       - `earned.js`: `earnedByCode(loggedByCode, paid, gapMode)` for both modes. Uses
+         whole minutes, and proportional mode uses largest remainder so `Σ earned = paid`
+         exactly. Proportional mode with zero logged time returns an error ("pick a code"),
+         because the gap has nowhere to go.
+       - `booking.js`: `proposeBooking({ earned, bank, days, loggedByDayCode })`: target =
+         `max(0, earned + bank)` per code, scaled to bookable, then largest-remainder
+         rounding into 30m units, then packed 16 units per workday. The packing first fills
+         each day with the codes logged on it (by that day's share), then fills what's left
+         from the codes with the most units remaining. Also `validateBooking(lines, days)`:
+         30m multiples, 8h per workday, 0 on leave days, total = bookable.
+       - `bank.js`: `bankByCode(opening, confirmedBookings)` using each booking's stored
+         `earned` snapshot, and `isStale(booking, recomputedEarned)` for the "changed since
+         booked" flag.
+    2. **Schema v12, booking codes, and the migration**. The existing log view keeps
+       working, now on codes.
+       - `db.js` `DB_VERSION` 12 adds three stores: `bookingcodes` (key `id`), `bookings` (key
+         `weekStart`), and `hoursSettings` (one row, id `"settings"`: bookable/week 2400,
+         lunch 30, last `gapMode`, opening bank `{ weekStart, perCode }`). These live in
+         IndexedDB, not `localStorage`, so they're part of the Drive snapshot. The opening
+         bank is real data.
+       - The migration runs inside `upgrade()` like v10's, as a **pure**
+         `migrateHoursRecords({ worklog, projects })` shared with the restore path. Each
+         project gets one code with the deterministic id `code-<projectId>` and name
+         `default`. Segments' `projectId` becomes `codeId`. Days get no office visit (home
+         days).
+       - **Backup**: `SNAPSHOT_VERSION` goes to 2, and `restoreBackupSnapshot` runs
+         `migrateHoursRecords` over a v1 snapshot's `worklog`/`projects` before writing,
+         which also creates the missing codes. Otherwise restoring an older backup would
+         write `projectId` segments into a v12 database. Older app builds already refuse v2
+         snapshots through the existing version check.
+       - New repos (`bookingCodesRepo.js`, `bookingsRepo.js`, `hoursSettingsRepo.js`) and
+         hooks, same pattern as `projectsRepo.js`/`useProjects.js`.
+       - **Projects view**: each project row expands to show its codes. You can add, rename,
+         set the employer's code text, and archive a code. A code is archived rather than
+         deleted once it has been logged or booked.
+       - The clock-in/switch picker (`ProjectTimeAction`) shows `project · code` chips (just
+         the project name when it has one active code). `timeUtils.js` moves from
+         `projectId` to `codeId`. The old per-day balance stays until PR 3 replaces the view.
+    3. **Weeks → week → day drill-down**, replacing `HoursView`.
+       - `HoursApp` holds a small in-memory stack (`weeks` / `week:<start>` / `day:<date>` /
+         `booking:<start>` / `bank`). The TopBar back arrow pops one level and goes home only
+         from the root. The bottom tabs become `weeks` / `projects`.
+       - **Today strip** on the weeks root: arrive/leave (office in/out, with an editable
+         time like clock-in), plus clock in/switch/out with the code picker.
+       - **Weeks view**: bank total header (tap opens the bank view), then week rows (bookable ·
+         paid · diff · `booked` / `unbooked` / `changed` badge), newest first, with enough
+         past weeks loaded to scroll back. Weeks before the opening-bank week are shown dimmed
+         and don't count.
+       - **Week view**: stats, a per-code table (logged · earned · booked · diff · bank
+         after), then 5 day rows (office span, `home`, mixed, `leave`, or `incomplete`), and a
+         "book week" button.
+       - **Day view**: office in/out inputs, a lunch toggle and a leave toggle, paid/logged/gap
+         stats, and the segment list editor (extracted from `HoursView` into a
+         `SegmentEditor.jsx` component).
+       - **Bank view**: per-code bank, and editing of the opening balance (as-of week plus a
+         signed `±h:mm` per code).
+    4. **Booking screen** (`booking:<start>`):
+       - The two gap modes side by side (earned, proposed and bank-after per code). The
+         single-code mode has a code selector defaulting to the last one used. Picking a mode
+         loads its proposal into the grid.
+       - A days × codes grid with ±30m steppers and live per-day, week and bank-after totals.
+         Confirm is disabled until `validateBooking` passes and no day is `incomplete`.
+       - Confirm stores the lines, `gapMode`, the `earned` snapshot and `confirmedAt`, and
+         updates the last-used `gapMode`. The week then counts in the bank. A booked week
+         whose recomputed earned differs gets the `changed` badge, and re-opening the screen
+         offers "re-confirm" (a new snapshot) or "unbook".
+    5. **Cleanup + docs**: delete the old `HoursView` code paths, the `normalDayHours`
+       `localStorage` key and `balanceMinutes`. Update §4 (data model), §5 (app/view tables)
+       and this section from "design draft" to "implemented".
+  - **Verification**: unit tests for everything in `hours2/` and for `migrateHoursRecords`.
+    Worked examples to test against: a mixed day, lunch toggled off, a negative gap, a leave
+    day, rounding that doesn't divide evenly, and a code with a negative bank. For PRs 2–4,
+    run the app with a copy of real data (export it to a file, then import it on the dev
+    server), check the migrated days show the same logged totals as before, and screenshot
+    each flow at phone width.
   - **Still open**:
     1. Leave: whether it also has to be booked. The design works either way (see above), so
        it stays open until that's known.
