@@ -726,73 +726,105 @@ These came up in the process and were deliberately deferred — listed here so t
     store only), Shortlist also covers habits, so it's its own top-level launcher app rather than
     a 5th Task Manager tab.
 
-- **Hours 2.0 (brainstorm — design only, not built)**: a ground-up redesign of Hours around
-  *weeks*, replacing the per-day `normalDayHours` flex balance. Still local-first (IndexedDB +
-  Drive snapshot) now that §6.2 is shelved.
+- **Hours 2.0 (design draft, rev 2 — not built)**: a ground-up redesign of Hours around
+  *weeks* and *booking codes*, replacing the per-day `normalDayHours` flex balance. Still
+  local-first (IndexedDB + Drive snapshot) now that §6.2 is shelved.
+  - **Projects and booking codes**: a project has **one or more booking codes**, e.g.
+    Blenddata → `internal`; HQPack → `billable`, `unbillable`; Moving Intelligence →
+    `billable`, `unbillable`. The booking code is what's booked and what the bank is kept
+    per. Proposal: **log against booking codes**, not bare projects. The clock-in/switch
+    picker shows `project · code` chips (a project with one code shows just the project), since
+    whether work is billable is known while doing it, not something to reconstruct on Friday.
   - **Three different numbers, deliberately kept apart**:
-    - **Worked** (what I'm entitled to get paid for). *Office day*: `leave − arrive − lunch`
-      (arrival/leave at the office, lunch fixed at 30m). *Home day*: the sum of logged project
-      segments (breaks already excluded), since there's no arrive/leave to go by.
-    - **Logged**: the sum of project segments (the existing clock in/switch/out data). On an
-      office day this doesn't have to match worked — e.g. arrive 08:10, leave 17:05 → worked
-      8h25, but logged might be 7h45. Logged is what says *where* the time went.
-    - **Booked**: what goes into the employer's booking system. Always **40h/week**, entered as
-      8h/day in 30m steps per booking code, usually all at once at the end of the week (can
-      be earlier).
-  - **Bank**: each week's `worked − 40h` is carried into a running bank, so a +1h30 week means
-    the next week only needs 38h30 of work to break even (and a short week the reverse).
-    Derived at render time from `worklog` (like today's balance), summed over *closed* weeks
-    (past weeks; the current week is shown as a projection), plus an optional opening balance.
+    - **Paid** (what I'm entitled to get paid for):
+      - *Office time* is `out − in − 30m`. In/out is the office **arrival and departure**,
+        recorded separately from logging (arrive 08:00, first log 08:20 → paid from 08:00).
+        The 30m lunch is always deducted, however long the actual break was.
+      - *Home time* is **only logged work segments**. Breaks and untracked gaps don't count.
+        This is on purpose, as motivation to keep home breaks short.
+      - A day has **at most one office visit**. Paid = office span − 30m + logged work outside
+        that span. A pure home day has no visit, so paid = logged. A pure office day is the
+        span. A **mixed day** (office in the morning, home in the afternoon) is the same
+        formula with no extra mode or flag.
+    - **Logged**: the sum of work segments, per booking code. It says *where* time went.
+      On office days it's usually below paid, and that's fine.
+    - **Booked**: what goes into the employer's system. **40h/week**, 8h per workday in 30m
+      steps, per booking code. No weekends: they're never shown or counted.
+  - **Earned per code** (the bridge between paid and booked): paid time is attributed to codes
+    in proportion to that week's logged time per code, i.e.
+    `earned[code] = paid_week × logged[code] / logged_week`. The unlogged office gap is
+    spread proportionally rather than lost. `Σ earned = paid`.
+  - **Bank, per booking code**: `bank[code] = opening[code] + Σ over booked weeks
+    (earned[code] − booked[code])`. The total bank is the sum over codes (= Σ paid − Σ
+    booked). A week only affects the bank once its booking is **confirmed**. Before that it
+    shows as a projection. No cap or reset. The **opening balance** is entered by hand per
+    code, copied from the system used today, as of the first week tracked in Hours 2.0.
+    Worklog from before that week is ignored for the bank.
+  - **Booking flow**: the app proposes, I edit, then confirm, and only confirming banks it.
+    - *Proposal*: target per code = `earned[code] + bank[code]`, i.e. try to book what was
+      earned plus what's owed from earlier weeks. Scale to the week's bookable total, round to
+      30m with largest remainder so it sums exactly, then pack into 8h per day, preferring days
+      where that code was actually logged. Whatever doesn't fit (rounding, or a total that's
+      over or under 40h) stays in that code's bank automatically.
+    - *Edit*: a days × codes grid with ±30m steppers. Each day must total 8h (0 on a leave
+      day), and the week must total the bookable hours. The resulting per-code bank change is
+      shown live.
+    - *Confirm*: stores the lines plus the `earned` snapshot the bank math used. If a day in
+      a booked week is edited later, the week gets a "changed since booked" flag with an
+      option to re-confirm, so the bank never silently shifts under a booking I've already
+      entered at work.
+  - **Leave** (whether leave also has to be *booked* is still unknown): a day can be marked
+    `leave`. Either way it's **bank-neutral**. Without a leave code, bookable drops by 8h and
+    paid adds 0. With a leave code, the day is booked 8h to it and paid gets 8h. So this can be
+    decided later without affecting the bank. For now leave just reduces bookable, and
+    switching to a leave code later only changes the booking proposal.
   - **Drill-down flow** (replaces the current single log view):
-    1. **Weeks** (app root): bank balance on top, then one row per week, newest first —
-       `wk 39 · 22–26 sep   bookable 40h · worked 41h30 · +1h30   [booked]`. The current week
-       row also shows what's left to break even (`40h − bank − worked so far`). A "today" strip
-       at the top keeps clock in/switch/out one tap away, so drilling down isn't required for
-       the everyday action.
-    2. **Week**: the same bookable / worked / difference stats (plus logged), then hours per
-       project/booking code (logged, and booked once a booking exists), then the 5 workdays —
-       `mon 22  office  08:10–17:05  8h25` / `tue 23  home  08:30–16:45  7h45` (home days show
-       first/last segment times and render differently, e.g. a `home` tag instead of `office`).
-       Also the entry point for booking the week.
-    3. **Day**: that day's stats (office: arrive/leave, lunch, worked; logged; unlogged gap =
-       worked − logged) and the list of logged segments — the existing segment editor, plus the
-       live clock controls when the day is today.
-  - **Booking helper (idea)**: propose a booking for the week — split 40h across booking codes
-    in proportion to logged hours, round to 30m (largest remainder so it sums to exactly 40h),
-    then pack into 8h per day, preferring days where that code was actually logged. Editable
-    before confirming; once confirmed it's stored so it's a record of what was really booked.
+    1. **Weeks** (app root): total bank on top (tap for the per-code breakdown), then one row
+       per week, newest first: `wk 39 · 22–26 sep   bookable 40h · paid 41h30 · +1h30
+       [booked]`. Unbooked past weeks are flagged. The current week also shows what's left to
+       break even. A **today strip** keeps arrive/leave and clock in/switch/out one tap away.
+    2. **Week**: the same stats (plus logged), then a per-code table (logged · earned ·
+       booked · diff · bank after), then the 5 workdays: `mon 22  office 08:00–17:05  8h35`,
+       `tue 23  home  7h45 logged`, `wed 24  office+home  …`, `fri 26  leave`. Also the entry
+       point to the booking grid.
+    3. **Day**: office in/out and paid, logged per code, the unlogged gap (paid − logged), and
+       the segment list (the existing editor), plus live controls when it's today.
   - **Data model sketch**:
     ```ts
-    interface WorkDay {              // evolves WorkLogEntry, same `worklog` store, keyed by date
+    interface Project { id; name; color }                // unchanged
+    interface BookingCode {                              // new `bookingcodes` store
+      id: string;
+      projectId: string;
+      name: string;             // "billable", "unbillable", "internal"
+      code?: string;            // the employer system's actual code, for reference
+      archived?: boolean;
+    }
+    interface WorkDay {                                  // evolves WorkLogEntry, `worklog` store
       date: string;
-      location: "office" | "home";
-      arrive?: string | null;        // office only, "HH:MM"
-      leave?: string | null;         // office only
-      lunchMin?: number;             // office only, default 30
-      segments: WorkSegment[];       // unchanged
+      officeIn?: string | null;  // "HH:MM", office arrival (not "leave", to avoid clashing
+      officeOut?: string | null; //  with leave days)
+      dayOff?: "leave" | null;
+      segments: { start: string; end: string | null; codeId: string | null }[]; // null = break
     }
-    interface WeekBooking {          // new `bookings` store, keyed by weekStart (Monday ISO)
-      weekStart: string;
-      lines: { date: string; projectId: string; minutes: number }[]; // 30m multiples, 8h/day
-      bookedAt: number | null;       // null = draft
+    interface WeekBooking {                              // new `bookings` store, key weekStart
+      weekStart: string;                                 // Monday ISO
+      lines: { date: string; codeId: string; minutes: number }[]; // 30m multiples
+      earned: Record<string, number>;                    // codeId -> minutes, at confirm time
+      confirmedAt: number | null;                        // null = draft
     }
-    // Project gains an optional `bookingCode?: string`.
-    // Settings: bookable hours/week (40), office lunch (30m), opening bank.
+    // Settings: bookable/week (40h), office lunch (30m),
+    //           opening bank { weekStart, perCode: Record<codeId, minutes> }.
     ```
-    Existing entries migrate as `location: "home"` (worked = logged, the closest match to
-    today's behavior); `normalDayHours` and the per-day balance go away.
-  - **Open questions**:
-    1. Is a project the same thing as a booking code (1:1), or can several projects book to
-       one code?
-    2. Public holidays / vacation / sick days: does bookable drop (e.g. 32h), or are they
-       booked to a leave code and the week stays 40h?
-    3. Lunch: always exactly 30m on office days, regardless of length? Never deducted at home?
-    4. Mixed days (office in the morning, home in the afternoon) — needed, or pick one?
-    5. Weekend work: ignore, or count toward that week's worked total?
-    6. Office arrive/leave: separate "arrive"/"leave" actions, or default them from the first
-       and last segment and let me correct them?
-    7. Bank: start at zero, or seed from the current flex balance? Any cap or periodic reset?
-    8. Should the app propose bookings (helper above), or only record what I booked?
+    Migration: each existing project gets one default booking code, and segments'
+    `projectId` maps to that code. Old entries become home days (no office visit).
+    `normalDayHours` and the per-day balance go away.
+  - **Still open**:
+    1. Logging against codes (billable/unbillable picked at clock-in) rather than projects: OK?
+    2. Unlogged office time spread proportionally over codes, or always to one default code
+       (e.g. Blenddata internal)?
+    3. Is lunch deducted on a short office visit (e.g. a half day at the office, the rest at
+       home), or only above some length?
+    4. Leave: find out whether it has to be booked. The design works either way (see above).
 
 ## 8. Suggested build order for Claude Code
 
