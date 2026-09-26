@@ -36,6 +36,13 @@ export function sortCodeIds(ids, codes, projects) {
   return [...ids].sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9) || (a < b ? -1 : 1));
 }
 
+// Title of the work task a segment was started from (ARCHITECTURE.md §7
+// "Work tasks"), or null — also when that task has since been deleted.
+export function taskTitle(taskId, workTasks) {
+  if (!taskId) return null;
+  return (workTasks || []).find((t) => t.id === taskId)?.title || null;
+}
+
 // Parses "+2:30", "-1:15", "2.5", "-0.5", "90m", "2h30" into signed minutes;
 // null if unparseable.
 export function parseSignedDuration(text) {

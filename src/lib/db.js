@@ -8,7 +8,7 @@ import { migrateHoursRecords } from "./hours2/migrate.js";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 
 let dbPromise = null;
 
@@ -157,6 +157,13 @@ export function getDB() {
         // share a location don't refetch — recreated rather than migrated,
         // like gcalEvents/gcalMeta above.
         ensureStore(db, "rideWindows", { keyPath: "id" });
+        // v13: Work tasks app — see ARCHITECTURE.md §7 ("Work tasks"). Its
+        // own projects (optionally linked to a Hours booking code), tasks and
+        // tags, deliberately separate from the personal `tasks`/`tags` and
+        // from Hours' `projects`.
+        ensureStore(db, "workTasks", { keyPath: "id" });
+        ensureStore(db, "workProjects", { keyPath: "id" });
+        ensureStore(db, "workTags", { keyPath: "id" });
         if (db.objectStoreNames.contains("weatherCache")) db.deleteObjectStore("weatherCache");
         db.createObjectStore("weatherCache", { keyPath: "key" });
       },

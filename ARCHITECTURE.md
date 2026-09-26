@@ -980,6 +980,8 @@ These came up in the process and were deliberately deferred — listed here so t
       (`▶ MDS · fix ingest · since 09:12 · 42m`) with stop (Hours `clockOut`). A running
       segment without a task (clocked in from Hours) shows just the code.
     - Marking the running task done (or dropped) also clocks out.
+    - No ▶ on weekends: Hours never shows or counts them, so time logged there would be
+      invisible in Hours.
     - **Actual time per task** is derived at render time (`actualByTask`) from segments
       carrying the task's id; nothing is stored on the task. Segments without a code (breaks)
       never count.
