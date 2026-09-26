@@ -1,13 +1,14 @@
 import { openDB } from "idb";
 import { timeToMinutes, minutesToTime } from "./timeUtils.js";
 import { TAG_PALETTE } from "../theme/colors.js";
+import { migrateHoursRecords } from "./hours2/migrate.js";
 
 // Single shared IndexedDB module — see ARCHITECTURE.md §4/§7 ("Shared schema").
 // Object stores for every entity in the data model are created up front so
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 
 let dbPromise = null;
 
@@ -62,6 +63,22 @@ async function migrateWorklogToSegments(transaction) {
   );
 }
 
+// v12: Hours 2.0 — booking codes, per-day office visits, weekly bookings.
+// Same pure transform the restore path applies to v1 backups
+// (backupSnapshot.js), run inside the versionchange transaction for the
+// same no-race reason as v10's migration above.
+async function migrateHoursToBookingCodes(transaction) {
+  const worklogStore = transaction.objectStore("worklog");
+  const codesStore = transaction.objectStore("bookingcodes");
+  const [worklog, projects, bookingcodes] = await Promise.all([
+    worklogStore.getAll(),
+    transaction.objectStore("projects").getAll(),
+    codesStore.getAll(),
+  ]);
+  const out = migrateHoursRecords({ worklog, projects, bookingcodes });
+  await Promise.all([...out.bookingcodes.map((c) => codesStore.put(c)), ...out.worklog.map((e) => worklogStore.put(e))]);
+}
+
 export function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
@@ -73,6 +90,16 @@ export function getDB() {
         ensureStore(db, "worklog", { keyPath: "date" });
         ensureStore(db, "projects", { keyPath: "id" });
         if (oldVersion < 10) await migrateWorklogToSegments(transaction);
+        // Hours 2.0 — see ARCHITECTURE.md §7. `bookingcodes`: a project's
+        // codes (billable/unbillable/internal) — what time is logged and
+        // booked against. `bookings`: one row per booked week, keyed by its
+        // Monday. `hoursSettings`: a single row (bookable hours, lunch,
+        // last gap mode, opening bank) — IndexedDB rather than localStorage
+        // so it's part of the Drive snapshot.
+        ensureStore(db, "bookingcodes", { keyPath: "id" });
+        ensureStore(db, "bookings", { keyPath: "weekStart" });
+        ensureStore(db, "hoursSettings", { keyPath: "id" });
+        if (oldVersion < 12) await migrateHoursToBookingCodes(transaction);
         // v8: Hours reworked from a per-week target into a running flex-time
         // balance derived from worklog entries directly (see
         // ARCHITECTURE.md §4/§5) — weektargets is no longer read or written.

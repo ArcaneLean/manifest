@@ -30,6 +30,7 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 | Hosting | GitHub Pages, auto-deployed from `main` by GitHub Actions | the move to a Cloudflare Worker (§6.2) is shelved — not doing it now |
 | Work backend *(shelved — not now)* | ~~Cloudflare Worker (`/api/*` REST for the PWA, `/mcp` for Claude) + D1~~ | kept as a parked plan in §6.2; not being built now |
 | Updates | Service worker | detects new deployed assets, prompts refresh — no separate release/versioning step needed |
+| Tests / CI | Vitest (+ `fake-indexeddb` for DB migration tests); `ci.yml` runs `npm test` + build on every PR, `deploy.yml` runs `npm test` before deploying | a failing test blocks the deploy — added with Hours 2.0, whose bank math and data migration are the riskiest code in the app |
 | Sync/backup (personal) | Per-device JSON snapshot pushed to Google Drive's hidden `appDataFolder`, with manual whole-dataset restore | no backend/proxy needed (unlike a GitHub PAT, a Drive OAuth token is safe client-side); reuses the OAuth plumbing already built for Google Calendar |
 | Conflict handling | N/A — deliberately not sync | personal data: each device only ever writes its own file, restore is a manual replace, never a merge. (The shelved Cloudflare plan would have kept work data as one server-side copy — §6.2) |
 
@@ -101,15 +102,19 @@ interface Countdown {
   // recurrence is implicitly yearly; next occurrence + "turns N" computed at render time
 }
 
-interface WorkLogEntry {
-  date: string;                  // ISO, one entry per day
-  segments: WorkSegment[];       // sequential, non-overlapping — see §7 "Hours: multi-project tracking"
+interface WorkDay {               // `worklog` store, keyed by date — Hours 2.0 (§7)
+  date: string;                   // ISO, one entry per day
+  officeIn?: string | null;       // "HH:MM" office arrival — separate from logging
+  officeOut?: string | null;      // "HH:MM" office departure
+  officeLunch?: boolean;          // deduct the 30m office lunch (default on when officeIn set)
+  dayOff?: "leave" | null;
+  segments: WorkSegment[];        // sequential, non-overlapping
 }
 
 interface WorkSegment {
   start: string;                  // "HH:MM"
   end: string | null;             // null while this segment is open (in progress)
-  projectId: string | null;       // null = break
+  codeId: string | null;          // BookingCode id; null = break
 }
 
 interface Project {
@@ -117,16 +122,34 @@ interface Project {
   name: string;
   color: string;              // hex, from the same curated 8-color palette as Tag
 }
+
+interface BookingCode {        // `bookingcodes` store
+  id: string;
+  projectId: string;
+  name: string;                // "billable", "unbillable", "internal", "default"
+  code?: string;               // the employer system's code, for reference
+  archived?: boolean;          // used codes are archived, never deleted
+}
+
+interface WeekBooking {        // `bookings` store, keyed by weekStart (Monday ISO)
+  weekStart: string;
+  lines: { date: string; codeId: string; minutes: number }[]; // 30m multiples, 8h/workday
+  gapMode: { kind: "proportional" } | { kind: "single"; codeId: string };
+  earned: Record<string, number>; // codeId -> minutes, snapshot at confirm time
+  confirmedAt: number;
+}
+
+interface HoursSettings {      // `hoursSettings` store, single row id "settings"
+  bookableWeekMin: number;     // 2400 (40h)
+  lunchMin: number;            // 30
+  gapMode: WeekBooking["gapMode"]; // last used, default for the next booking
+  opening: { weekStart: string; perCode: Record<string, number> } | null;
+}
 ```
 
-Hours has no per-week target store anymore — the running balance is derived at render
-time from `worklog` directly: `sum((workedMinutes(entry) - normalDayMin))` over every
-*completed* entry (last segment closed; a day that's started but not yet clocked out
-doesn't count yet). `workedMinutes(entry)` sums only segments with a non-null
-`projectId` — break time (`projectId: null`) falls out of the total automatically rather
-than being tracked as a separate duration field. `normalDayMin` is a single persisted
-setting (`normalDayHours`, default 8.5), not per-week data, so it lives in `localStorage`
-via `usePersistentState` rather than IndexedDB — see §5.
+Hours' numbers (paid, logged, earned, booked, the per-code bank) are all derived at render
+time by the pure modules in `src/lib/hours2/` — nothing derived is stored except each
+booking's `earned` snapshot. See §7 "Hours 2.0" for the rules.
 
 Quadrant derivation (shared helper, currently duplicated in 3 files):
 
@@ -149,7 +172,7 @@ each app owns its own internal navigation and is otherwise independent.
 |---|---|---|---|
 | Task manager | Tasks, Templates, Recurring, Tags | bottom tab bar (4 tabs) | all lenses over the *same* task/template/tag store — not separate data, so they're bundled behind one app rather than separate launcher tiles. Matrix and Calendar *(archived)* — see below — were part of this set; Templates was later split into Templates (one-off) and Recurring — see §7 |
 | Countdowns | Countdowns | none (single view) | yearly recurrence, `[042]`-style counter |
-| Hours | Hours, Projects | 2-tab switch (log/projects) | clock in/out per project, worklog-derived running flex-time balance — see §7 "Hours: multi-project tracking" |
+| Hours | Weeks → Week → Day, Booking, Bank; Projects | 2-tab switch (weeks/projects) + drill-down stack | office arrive/leave + clock in/out per booking code, weekly bookings, per-code bank — see §7 "Hours 2.0" |
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
 | Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
 | Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
@@ -165,8 +188,8 @@ each app owns its own internal navigation and is otherwise independent.
 | Templates | templates, tasks, tags | tasks (on run), templates | one-off, single-task presets only — split from the old combined Templates view, see §7 |
 | Recurring | templates, tasks, tags | tasks (the recurring anchor lifecycle), templates | recurring templates only — split from the old combined Templates view, see §7 |
 | Tags | tags | tags | CRUD, 8-color curated palette |
-| Hours | worklog, projects | worklog | clock in/out per project or break; balance vs. `normalDayHours` (localStorage) derived at render time |
-| Projects | projects | projects | CRUD, 8-color curated palette (same `ColorPicker`/palette as Tags) |
+| Hours (weeks/week/day/booking/bank) | worklog, projects, bookingcodes, bookings, hoursSettings | worklog, bookings, hoursSettings | `src/views/hours/`; all Hours data loaded once in `HoursApp` and passed down |
+| Projects | projects, bookingcodes (+ worklog/bookings to tell which codes are used) | projects, bookingcodes | CRUD, 8-color curated palette (same `ColorPicker`/palette as Tags), plus each project's booking codes |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -447,7 +470,7 @@ These came up in the process and were deliberately deferred — listed here so t
     function more than once per call (e.g. Strict Mode in dev); `putTask`/`deleteTask` are
     idempotent either way, but `spawnNextOccurrence` mints a new task id, so running it twice
     would double up the next occurrence.
-- **Hours: multi-project tracking (implemented)**: reworked from one clock-in/out
+- **Hours: multi-project tracking (implemented, superseded by Hours 2.0 below)**: reworked from one clock-in/out
   session per day to a sequence of `WorkSegment`s per day, each tagged to a `Project` (or
   `projectId: null` for a break) — see §4. The day is a small state machine: **not
   started** -> clock in (explicit project-or-break picker, no default selection, so a
@@ -584,7 +607,7 @@ These came up in the process and were deliberately deferred — listed here so t
   shared row rendering (`TemplateRow.jsx`, with its countdown badge) was factored out since both
   views need it; each view keeps its own persisted filter/group-by-tag state
   (`manifest.templates.*` / `manifest.recurring.*`).
-- **Work hours (reworked)**: single session per day only (no split days). No export needed
+- **Work hours (reworked, superseded by Hours 2.0 below)**: single session per day only (no split days). No export needed
   (confirmed). Reworked from a per-week target/progress-bar model into a running flex-time
   **balance**: the primary UI is clock in (log a start time) / clock out (log an end time +
   break), and each completed day's `worked - normalDayMin` (default 8.5h/day, user-configurable)
@@ -726,7 +749,7 @@ These came up in the process and were deliberately deferred — listed here so t
     store only), Shortlist also covers habits, so it's its own top-level launcher app rather than
     a 5th Task Manager tab.
 
-- **Hours 2.0 (design draft, rev 3 — not built)**: a ground-up redesign of Hours around
+- **Hours 2.0 (implemented)**: a ground-up redesign of Hours around
   *weeks* and *booking codes*, replacing the per-day `normalDayHours` flex balance. Still
   local-first (IndexedDB + Drive snapshot) now that §6.2 is shelved.
   - **Projects and booking codes**: a project has **one or more booking codes**, e.g.
@@ -833,94 +856,33 @@ These came up in the process and were deliberately deferred — listed here so t
     Migration: each existing project gets one default booking code, and segments'
     `projectId` maps to that code. Old entries become home days (no office visit).
     `normalDayHours` and the per-day balance go away.
-  - **Implementation plan**: five PRs, each leaving the app working. PR 1 has no visible
-    change. From PR 2 on, data is migrated, so every later PR has to keep reading that shape.
-    1. **Test harness + pure domain module** (no UI change). The repo has no tests yet, and
-       the bank math is exactly where a silent bug would cost real money, so add `vitest`
-       (`npm test`) first. New `src/lib/hours2/`, all pure functions with no IndexedDB or
-       React, each with unit tests:
-       - `week.js`: `weekStartOf(date)` (Monday ISO), `workdays(weekStart)` (Mon–Fri),
-         week label (`wk 39 · 22–26 sep`).
-       - `day.js`: `loggedByCode(day)`, `officeMinutes(day)` (`out − in − (officeLunch ?
-         30 : 0)`), `paidMinutes(day, now?)` = office minutes + logged work clipped to
-         *outside* the office span (a segment straddling arrival/departure is split, not
-         double-counted). `now` projects an open segment on today, and a past day with an
-         open segment is reported as `incomplete`.
-       - `earned.js`: `earnedByCode(loggedByCode, paid, gapMode)` for both modes. Uses
-         whole minutes, and proportional mode uses largest remainder so `Σ earned = paid`
-         exactly. Proportional mode with zero logged time returns an error ("pick a code"),
-         because the gap has nowhere to go.
-       - `booking.js`: `proposeBooking({ earned, bank, days, loggedByDayCode })`: target =
-         `max(0, earned + bank)` per code, scaled to bookable, then largest-remainder
-         rounding into 30m units, then packed 16 units per workday. The packing first fills
-         each day with the codes logged on it (by that day's share), then fills what's left
-         from the codes with the most units remaining. Also `validateBooking(lines, days)`:
-         30m multiples, 8h per workday, 0 on leave days, total = bookable.
-       - `bank.js`: `bankByCode(opening, confirmedBookings)` using each booking's stored
-         `earned` snapshot, and `isStale(booking, recomputedEarned)` for the "changed since
-         booked" flag.
-    2. **Schema v12, booking codes, and the migration**. The existing log view keeps
-       working, now on codes.
-       - `db.js` `DB_VERSION` 12 adds three stores: `bookingcodes` (key `id`), `bookings` (key
-         `weekStart`), and `hoursSettings` (one row, id `"settings"`: bookable/week 2400,
-         lunch 30, last `gapMode`, opening bank `{ weekStart, perCode }`). These live in
-         IndexedDB, not `localStorage`, so they're part of the Drive snapshot. The opening
-         bank is real data.
-       - The migration runs inside `upgrade()` like v10's, as a **pure**
-         `migrateHoursRecords({ worklog, projects })` shared with the restore path. Each
-         project gets one code with the deterministic id `code-<projectId>` and name
-         `default`. Segments' `projectId` becomes `codeId`. Days get no office visit (home
-         days).
-       - **Backup**: `SNAPSHOT_VERSION` goes to 2, and `restoreBackupSnapshot` runs
-         `migrateHoursRecords` over a v1 snapshot's `worklog`/`projects` before writing,
-         which also creates the missing codes. Otherwise restoring an older backup would
-         write `projectId` segments into a v12 database. Older app builds already refuse v2
-         snapshots through the existing version check.
-       - New repos (`bookingCodesRepo.js`, `bookingsRepo.js`, `hoursSettingsRepo.js`) and
-         hooks, same pattern as `projectsRepo.js`/`useProjects.js`.
-       - **Projects view**: each project row expands to show its codes. You can add, rename,
-         set the employer's code text, and archive a code. A code is archived rather than
-         deleted once it has been logged or booked.
-       - The clock-in/switch picker (`ProjectTimeAction`) shows `project · code` chips (just
-         the project name when it has one active code). `timeUtils.js` moves from
-         `projectId` to `codeId`. The old per-day balance stays until PR 3 replaces the view.
-    3. **Weeks → week → day drill-down**, replacing `HoursView`.
-       - `HoursApp` holds a small in-memory stack (`weeks` / `week:<start>` / `day:<date>` /
-         `booking:<start>` / `bank`). The TopBar back arrow pops one level and goes home only
-         from the root. The bottom tabs become `weeks` / `projects`.
-       - **Today strip** on the weeks root: arrive/leave (office in/out, with an editable
-         time like clock-in), plus clock in/switch/out with the code picker.
-       - **Weeks view**: bank total header (tap opens the bank view), then week rows (bookable ·
-         paid · diff · `booked` / `unbooked` / `changed` badge), newest first, with enough
-         past weeks loaded to scroll back. Weeks before the opening-bank week are shown dimmed
-         and don't count.
-       - **Week view**: stats, a per-code table (logged · earned · booked · diff · bank
-         after), then 5 day rows (office span, `home`, mixed, `leave`, or `incomplete`), and a
-         "book week" button.
-       - **Day view**: office in/out inputs, a lunch toggle and a leave toggle, paid/logged/gap
-         stats, and the segment list editor (extracted from `HoursView` into a
-         `SegmentEditor.jsx` component).
-       - **Bank view**: per-code bank, and editing of the opening balance (as-of week plus a
-         signed `±h:mm` per code).
-    4. **Booking screen** (`booking:<start>`):
-       - The two gap modes side by side (earned, proposed and bank-after per code). The
-         single-code mode has a code selector defaulting to the last one used. Picking a mode
-         loads its proposal into the grid.
-       - A days × codes grid with ±30m steppers and live per-day, week and bank-after totals.
-         Confirm is disabled until `validateBooking` passes and no day is `incomplete`.
-       - Confirm stores the lines, `gapMode`, the `earned` snapshot and `confirmedAt`, and
-         updates the last-used `gapMode`. The week then counts in the bank. A booked week
-         whose recomputed earned differs gets the `changed` badge, and re-opening the screen
-         offers "re-confirm" (a new snapshot) or "unbook".
-    5. **Cleanup + docs**: delete the old `HoursView` code paths, the `normalDayHours`
-       `localStorage` key and `balanceMinutes`. Update §4 (data model), §5 (app/view tables)
-       and this section from "design draft" to "implemented".
-  - **Verification**: unit tests for everything in `hours2/` and for `migrateHoursRecords`.
-    Worked examples to test against: a mixed day, lunch toggled off, a negative gap, a leave
-    day, rounding that doesn't divide evenly, and a code with a negative bank. For PRs 2–4,
-    run the app with a copy of real data (export it to a file, then import it on the dev
-    server), check the migrated days show the same logged totals as before, and screenshot
-    each flow at phone width.
+  - **As built** (shipped as one change instead of the five planned PRs, with the tests
+    running in CI):
+    - **Pure domain module** `src/lib/hours2/`: `week.js` (Monday-keyed weeks, ISO week
+      numbers, fixed month names since newer ICU renders en-GB September as "sept"), `day.js`
+      (paid/logged/office math, day status), `earned.js` (both gap modes, largest-remainder
+      `apportion`), `booking.js` (proposal, validation), `bank.js` (per-code bank, stale
+      check), `summary.js` (week summary, settings defaults), `migrate.js` (v12 transform).
+      All unit tested (`*.test.js` next to each), plus `dbMigration.test.js`, which runs the
+      real v11→v12 upgrade and a v1-backup restore against `fake-indexeddb`.
+    - **DB v12 + backup v2** as planned: `migrateHoursRecords` runs in `upgrade()` and in
+      `upgradeSnapshot()` (restore path). Deterministic `code-<projectId>` ids. Checked
+      against a real backup: every day's logged minutes were identical before and after.
+    - **Views** in `src/views/hours/` (`WeeksView`, `WeekView`, `DayView`, `BookingView`,
+      `BankView`, `TodayPanel`, shared `ui.jsx`/`codes.js`/`model.js`). `HoursApp` holds
+      the route stack. Switching tabs keeps the stack, and tapping the active weeks tab
+      again goes back to the root. `ProjectsView` gained the codes editor. A new project
+      starts with one `default` code, and a code referenced by any segment, booking or the
+      opening balance can only be archived.
+    - **Deviations from the draft**: the two gap modes are stacked cards (each with earned
+      / book / bank-after per code), not side by side, which fits a phone. Booking drafts
+      aren't persisted: the grid lives in component state until confirm, so
+      `WeekBooking.confirmedAt` is always set. Clock in also resumes after clocking out
+      (appends a segment), which is how a mixed day's home part gets logged. The old
+      `manifest.hours.normalDayHours` `localStorage` key is simply no longer read.
+    - **Stale weeks**: a confirmed week whose recomputed earned differs from its snapshot
+      shows "changed since booked". Its bank column keeps using the snapshot, with a note
+      showing the old vs new earned, until it's re-confirmed.
   - **Still open**:
     1. Leave: whether it also has to be booked. The design works either way (see above), so
        it stays open until that's known.

@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { listWorklog, putWorklogEntry, deleteWorklogEntry } from "../lib/hoursRepo.js";
-import { usePersistentState } from "./usePersistentState.js";
+import { hasAnyData, openSegment } from "../lib/hours2/day.js";
 
-const NORMAL_DAY_HOURS_KEY = "manifest.hours.normalDayHours";
-const DEFAULT_NORMAL_DAY_HOURS = 8.5;
-
+// Hours 2.0 worklog — one WorkDay per date (see ARCHITECTURE.md §7 "Hours
+// 2.0"): an optional office visit (officeIn/officeOut/officeLunch), an
+// optional dayOff, and code-tagged segments (codeId null = break).
 export function useHours() {
   const [worklog, setWorklog] = useState({});
   const [loading, setLoading] = useState(true);
-  const [normalDayHours, setNormalDayHours] = usePersistentState(NORMAL_DAY_HOURS_KEY, DEFAULT_NORMAL_DAY_HOURS);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,47 +21,49 @@ export function useHours() {
     };
   }, []);
 
-  // Full replace of a day's segment list — used directly by the backfill/edit
-  // panel, and as the shared primitive the clock in/switch/out actions below
-  // build on.
-  const saveEntry = (date, segments) => {
-    const entry = { date, segments };
-    setWorklog((prev) => ({ ...prev, [date]: entry }));
-    putWorklogEntry(entry);
-    return entry;
-  };
-
-  const clearEntry = (date) => {
+  // Applies `fn` to a day (a fresh empty one if it doesn't exist yet) and
+  // persists the result — or deletes the row once nothing is left on it.
+  // The put runs inside the updater so it always sees the latest state; it's
+  // idempotent, so a double-invoked updater (Strict Mode) is harmless.
+  const updateDay = (date, fn) => {
     setWorklog((prev) => {
-      const next = { ...prev };
-      delete next[date];
-      return next;
+      const current = prev[date] || { date, segments: [] };
+      const next = { ...fn(current), date };
+      const out = { ...prev };
+      if (hasAnyData(next)) {
+        out[date] = next;
+        putWorklogEntry(next);
+      } else {
+        delete out[date];
+        deleteWorklogEntry(date);
+      }
+      return out;
     });
-    deleteWorklogEntry(date);
   };
 
-  // Starts the day: one open segment (start logged, end null) on the given
-  // project (or null for break).
-  const clockIn = (date, time, projectId) => saveEntry(date, [{ start: time, end: null, projectId }]);
+  const saveDay = (day) => updateDay(day.date, () => day);
+  const clearDay = (date) => updateDay(date, () => ({ date, segments: [] }));
 
-  // Closes the current open segment and opens a new one on a different
-  // project/break — used both for "switch project" and "take a break".
-  const switchSegment = (date, time, projectId) => {
-    const entry = worklog[date];
-    const prior = entry ? entry.segments.slice(0, -1) : [];
-    const current = entry ? entry.segments[entry.segments.length - 1] : null;
-    const closed = current ? [{ ...current, end: time }] : [];
-    saveEntry(date, [...prior, ...closed, { start: time, end: null, projectId }]);
+  const closeOpen = (segments, time) => {
+    const open = segments.length && !segments[segments.length - 1].end;
+    return open ? [...segments.slice(0, -1), { ...segments[segments.length - 1], end: time }] : segments;
   };
 
-  // Ends the day: closes the current open segment, no new one follows.
-  const clockOut = (date, time) => {
-    const entry = worklog[date];
-    if (!entry || entry.segments.length === 0) return;
-    const prior = entry.segments.slice(0, -1);
-    const current = entry.segments[entry.segments.length - 1];
-    saveEntry(date, [...prior, { ...current, end: time }]);
-  };
+  // Starts logging (also resumes after clocking out, e.g. an evening at
+  // home after an office day): appends an open segment on `codeId`.
+  const clockIn = (date, time, codeId) =>
+    updateDay(date, (d) => ({ ...d, segments: [...closeOpen(d.segments || [], time), { start: time, end: null, codeId }] }));
 
-  return { worklog, loading, saveEntry, clearEntry, clockIn, switchSegment, clockOut, normalDayHours, setNormalDayHours };
+  // Closes the open segment and opens one on a different code/break.
+  const switchSegment = clockIn;
+
+  const clockOut = (date, time) =>
+    updateDay(date, (d) => (openSegment(d) ? { ...d, segments: closeOpen(d.segments, time) } : d));
+
+  // Office arrival/departure — separate from logging: paid from arrival even
+  // if the first log starts later.
+  const arrive = (date, time) => updateDay(date, (d) => ({ ...d, officeIn: time, officeOut: d.officeOut || null }));
+  const leave = (date, time) => updateDay(date, (d) => ({ ...d, officeOut: time }));
+
+  return { worklog, loading, updateDay, saveDay, clearDay, clockIn, switchSegment, clockOut, arrive, leave };
 }

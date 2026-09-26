@@ -1,8 +1,11 @@
 import { getDB } from "./db.js";
+import { migrateHoursRecords } from "./hours2/migrate.js";
 
 // Snapshot format version — bump if the shape below ever changes, so the
-// restore path can tell old blobs apart from new ones.
-const SNAPSHOT_VERSION = 1;
+// restore path can tell old blobs apart from new ones. v2: Hours 2.0 (DB v12)
+// — worklog segments carry `codeId` instead of `projectId`, plus the
+// `bookingcodes` store; see upgradeSnapshot.
+export const SNAPSHOT_VERSION = 2;
 
 // Rebuildable caches (Calendar sync cache, weather forecasts) — included in
 // a snapshot since it just dumps every store, but never restored: they
@@ -40,6 +43,20 @@ export function validateSnapshot(snapshot) {
   }
 }
 
+// Brings an older snapshot's records up to the current schema before it's
+// restored — the DB's own upgrade() migrations only ever run on data already
+// in IndexedDB, so a v1 backup restored as-is would put `projectId`
+// segments into a v12 database. Pure; returns a new snapshot.
+export function upgradeSnapshot(snapshot) {
+  if (snapshot.version >= 2 || !Array.isArray(snapshot.stores.worklog)) return snapshot;
+  const { worklog, bookingcodes } = migrateHoursRecords({
+    worklog: snapshot.stores.worklog,
+    projects: snapshot.stores.projects || [],
+    bookingcodes: snapshot.stores.bookingcodes || [],
+  });
+  return { ...snapshot, version: 2, stores: { ...snapshot.stores, worklog, bookingcodes } };
+}
+
 // Stores a restore would actually replace: present in both the snapshot and
 // this device's current schema, and not a rebuildable cache.
 async function restorableStoreNames(snapshot) {
@@ -53,6 +70,7 @@ async function restorableStoreNames(snapshot) {
 // check they picked the right backup.
 export async function summarizeSnapshot(snapshot) {
   validateSnapshot(snapshot);
+  snapshot = upgradeSnapshot(snapshot);
   const names = await restorableStoreNames(snapshot);
   return names.map((name) => ({ store: name, count: snapshot.stores[name].length }));
 }
@@ -66,6 +84,7 @@ export async function summarizeSnapshot(snapshot) {
 // since every hook holds its own in-memory copy of what it loaded.
 export async function restoreBackupSnapshot(snapshot) {
   validateSnapshot(snapshot);
+  snapshot = upgradeSnapshot(snapshot);
   const names = await restorableStoreNames(snapshot);
   if (names.length === 0) throw new Error("backup contains no restorable data");
   const db = await getDB();
