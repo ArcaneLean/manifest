@@ -10,6 +10,7 @@ import { useTasks } from "../hooks/useTasks.js";
 import { useShowCompleted } from "../hooks/useShowCompleted.js";
 import { useShowScheduled } from "../hooks/useShowScheduled.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
+import { useTagFilter } from "../hooks/useTagFilter.js";
 import { Checkbox } from "../components/Checkbox.jsx";
 import { TaskEditModal } from "../components/TaskEditModal.jsx";
 import { Toggle } from "../components/Toggle.jsx";
@@ -32,7 +33,7 @@ export default function TasksView() {
   const [draftStartDate, setDraftStartDate] = useState("");
   const [draftDueDate, setDraftDueDate] = useState("");
   const [sortBy, setSortBy] = usePersistentState("manifest.tasks.sortBy", "added");
-  const [filterTags, setFilterTags] = usePersistentState("manifest.tasks.filterTags", []);
+  const [filterTags, toggleFilterTag] = useTagFilter("manifest.tasks.filterTags", tags, tagsLoading);
   const [showCompleted, setShowCompleted] = useShowCompleted();
   const [showScheduled, setShowScheduled] = useShowScheduled();
   const inputRef = useRef(null);
@@ -46,10 +47,6 @@ export default function TasksView() {
 
   const toggleDraftTag = (id) => {
     setDraftTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const toggleFilterTag = (id) => {
-    setFilterTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const commitDraft = () => {

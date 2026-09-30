@@ -6,6 +6,7 @@ import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useTemplates } from "../hooks/useTemplates.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
+import { useTagFilter } from "../hooks/useTagFilter.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { Segmented } from "../components/Segmented.jsx";
 import { TagPickerChip } from "../components/TagChip.jsx";
@@ -46,7 +47,7 @@ export default function RecurringView() {
   const [draftMonthDay, setDraftMonthDay] = useState(1);
   const [draftDateField, setDraftDateField] = useState("due");
   const [draftTags, setDraftTags] = useState([]);
-  const [filterTags, setFilterTags] = usePersistentState("manifest.recurring.filterTags", []);
+  const [filterTags, toggleFilterTag] = useTagFilter("manifest.recurring.filterTags", tags, tagsLoading);
   const [groupByTag, setGroupByTag] = usePersistentState("manifest.recurring.groupByTag", false);
   const textRef = useRef(null);
   const now = useClock();
@@ -73,10 +74,6 @@ export default function RecurringView() {
 
   const toggleDraftTag = (id) => {
     setDraftTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const toggleFilterTag = (id) => {
-    setFilterTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const cancelBuild = () => {
