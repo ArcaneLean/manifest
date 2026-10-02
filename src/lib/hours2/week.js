@@ -1,6 +1,7 @@
 // Week/workday helpers for Hours 2.0 — see ARCHITECTURE.md §7 ("Hours 2.0").
-// Weeks are keyed by their Monday as an ISO date string; only Mon–Fri are
-// workdays (weekends are never shown or counted).
+// Weeks are keyed by their Monday as an ISO date string. Mon–Fri are
+// workdays (bookable); weekend days can still hold logged/paid time, which
+// counts toward the week but is never booked.
 import { toISO, parseISODate, addDays, startOfWeekMonday } from "../dateUtils.js";
 
 export const WORKDAYS_PER_WEEK = 5;
@@ -20,6 +21,11 @@ export function addDaysISO(iso, n) {
 
 export function workdays(weekStartISO) {
   return Array.from({ length: WORKDAYS_PER_WEEK }, (_, i) => addDaysISO(weekStartISO, i));
+}
+
+// All seven days, Mon–Sun.
+export function weekDays(weekStartISO) {
+  return Array.from({ length: 7 }, (_, i) => addDaysISO(weekStartISO, i));
 }
 
 export function isWeekend(iso) {

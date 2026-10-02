@@ -1,7 +1,7 @@
 // Hours root — bank, today's quick actions, one row per week. See
 // ARCHITECTURE.md §7 ("Hours 2.0").
 import { COLORS } from "../../theme/colors.js";
-import { weekLabel, isWeekend } from "../../lib/hours2/week.js";
+import { weekLabel } from "../../lib/hours2/week.js";
 import { Page, Header, Section, Row, Badge } from "./ui.jsx";
 import { TodayPanel } from "./TodayPanel.jsx";
 import { fmt, fmtSigned, signColor, linkStyle } from "./ui.jsx";
@@ -56,9 +56,7 @@ export default function WeeksView({ store, now, go }) {
         </div>
       </Section>
 
-      {!isWeekend(ctx.todayISO) && (
-        <TodayPanel date={ctx.todayISO} day={store.worklog[ctx.todayISO]} now={now} store={store} onOpenDay={() => go({ view: "day", date: ctx.todayISO })} />
-      )}
+      <TodayPanel date={ctx.todayISO} day={store.worklog[ctx.todayISO]} now={now} store={store} onOpenDay={() => go({ view: "day", date: ctx.todayISO })} />
 
       <div>
         {weeks.map((info) => {

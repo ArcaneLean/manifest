@@ -14,7 +14,7 @@ import { counter } from "./ui.jsx";
 const meta = { display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10px", color: COLORS.dim, whiteSpace: "nowrap" };
 
 export function WorkTaskRow({ task, store, showProject = true }) {
-  const { workProjects, tags, actual, running, canClock, todayISO, nowMs, toggle, openTask, startWork, stopWork } = store;
+  const { workProjects, tags, actual, running, todayISO, nowMs, toggle, openTask, startWork, stopWork } = store;
   const open = isOpen(task);
   const p = priorityOf(task);
   const project = task.projectId && workProjects.find((x) => x.id === task.projectId);
@@ -108,8 +108,7 @@ export function WorkTaskRow({ task, store, showProject = true }) {
           <Square size={15} color={COLORS.amber} fill={COLORS.amber} />
         </span>
       ) : (
-        open &&
-        canClock && (
+        open && (
           <span onClick={() => startWork(task)} style={{ cursor: "pointer", flexShrink: 0, paddingTop: "3px" }} aria-label="start working">
             <Play size={15} color={COLORS.dim} />
           </span>

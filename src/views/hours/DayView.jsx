@@ -68,11 +68,8 @@ export default function DayView({ date, store, now, go, replace }) {
 
   const patch = (p) => updateDay(date, (d) => ({ ...d, ...p }));
 
-  const nav = (n) => {
-    let next = addDaysISO(date, n);
-    while (isWeekend(next)) next = addDaysISO(next, n);
-    replace({ view: "day", date: next });
-  };
+  const nav = (n) => replace({ view: "day", date: addDaysISO(date, n) });
+  const weekend = isWeekend(date);
 
   const startEdit = () => setDraft((day.segments || []).map((s) => ({ ...s })));
   const editRow = (i, next) => setDraft((prev) => prev.map((s, idx) => (idx === i ? next : s)));
@@ -160,8 +157,9 @@ export default function DayView({ date, store, now, go, replace }) {
         </div>
         <div style={{ display: "flex", gap: "18px", flexWrap: "wrap" }}>
           {day.officeIn && <BracketCheck checked={hasOfficeLunch(day)} onChange={(v) => patch({ officeLunch: v })} label={`office lunch (−${settings.lunchMin}m)`} />}
-          <BracketCheck checked={isLeave(day)} onChange={(v) => patch({ dayOff: v ? "leave" : null })} label="leave day" />
+          {!weekend && <BracketCheck checked={isLeave(day)} onChange={(v) => patch({ dayOff: v ? "leave" : null })} label="leave day" />}
         </div>
+        {weekend && <div style={{ fontSize: "11px", color: COLORS.dim, marginTop: "10px" }}>weekend — counts toward paid and the bank, but isn't booked</div>}
         {!day.officeIn && !isLeave(day) && <div style={{ fontSize: "11px", color: COLORS.dim, marginTop: "10px" }}>no office visit — a home day: only logged work counts as paid</div>}
       </Section>
 

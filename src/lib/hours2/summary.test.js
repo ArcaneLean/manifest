@@ -24,6 +24,21 @@ describe("summarizeWeek", () => {
     expect(s.bookingDays.map((d) => d.bookable)).toEqual([true, true, true, true, false]);
   });
 
+  it("counts weekend work toward paid but never books it", () => {
+    const w = summarizeWeek(
+      "2026-09-21",
+      { ...worklog, "2026-09-26": { date: "2026-09-26", segments: [seg("10:00", "12:00", "b")] } },
+      DEFAULT_SETTINGS,
+      { todayISO: "2026-09-28" },
+    );
+    expect(w.days).toHaveLength(7);
+    expect(w.days[5]).toMatchObject({ weekend: true, paid: 120, leave: false });
+    expect(w.paid).toBe(s.paid + 120);
+    expect(w.loggedByCode.b).toBe(240 + 120);
+    expect(w.bookable).toBe(s.bookable);
+    expect(w.bookingDays.map((d) => d.date)).toEqual(s.bookingDays.map((d) => d.date));
+  });
+
   it("earned sums to paid", () => {
     const { earned } = earnedForWeek(s, { kind: "proportional" });
     expect(Object.values(earned).reduce((a, b) => a + b, 0)).toBe(s.paid);
