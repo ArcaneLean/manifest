@@ -6,6 +6,7 @@ import { useTags } from "../hooks/useTags.js";
 import { useTasks } from "../hooks/useTasks.js";
 import { useTemplates } from "../hooks/useTemplates.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
+import { useTagFilter } from "../hooks/useTagFilter.js";
 import { Toggle } from "../components/Toggle.jsx";
 import { TagPickerChip } from "../components/TagChip.jsx";
 import { TemplateRow } from "../components/TemplateRow.jsx";
@@ -29,7 +30,7 @@ export default function TemplatesView() {
   const [draftUrgent, setDraftUrgent] = useState(false);
   const [draftImportant, setDraftImportant] = useState(false);
   const [draftTags, setDraftTags] = useState([]);
-  const [filterTags, setFilterTags] = usePersistentState("manifest.templates.filterTags", []);
+  const [filterTags, toggleFilterTag] = useTagFilter("manifest.templates.filterTags", tags, tagsLoading);
   const [groupByTag, setGroupByTag] = usePersistentState("manifest.templates.groupByTag", false);
   const textRef = useRef(null);
   const now = useClock();
@@ -52,10 +53,6 @@ export default function TemplatesView() {
 
   const toggleDraftTag = (id) => {
     setDraftTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const toggleFilterTag = (id) => {
-    setFilterTags((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const cancelBuild = () => {
