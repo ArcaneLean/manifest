@@ -815,7 +815,10 @@ These came up in the process and were deliberately deferred — listed here so t
     - **Logged**: the sum of work segments, per booking code. It says *where* time went.
       On office days it's usually below paid, and that's fine.
     - **Booked**: what goes into the employer's system. **40h/week**, 8h per workday in 30m
-      steps, per booking code. No weekends: they're never shown or counted.
+      steps, per booking code. Weekends are never booked, but weekend work can be logged:
+      it counts toward the week's paid and logged (and so lands in the bank). The week view
+      lists a weekend day only when it has data or is today; the day view's arrows step
+      through every day, and a weekend day has no leave toggle.
   - **Earned per code** (the bridge between paid and booked): the week's **gap**
     (`paid − logged`, mostly unlogged office time; it can be negative, e.g. a fully logged
     office day where the lunch deduction brings paid below logged) is attributed to codes in
@@ -980,8 +983,7 @@ These came up in the process and were deliberately deferred — listed here so t
       (`▶ MDS · fix ingest · since 09:12 · 42m`) with stop (Hours `clockOut`). A running
       segment without a task (clocked in from Hours) shows just the code.
     - Marking the running task done (or dropped) also clocks out.
-    - No ▶ on weekends: Hours never shows or counts them, so time logged there would be
-      invisible in Hours.
+    - ▶ works on weekends too: Hours counts weekend time toward paid/the bank.
     - **Actual time per task** is derived at render time (`actualByTask`) from segments
       carrying the task's id; nothing is stored on the task. Segments without a code (breaks)
       never count.

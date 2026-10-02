@@ -7,12 +7,12 @@ import { Section, fmt, Dot, secondaryBtnStyle } from "../hours/ui.jsx";
 import { codeLabel, codeColor } from "../hours/codes.js";
 
 export function WorkingStrip({ store }) {
-  const { running, canClock, tasks, codes, hoursProjects, nowMin, stopWork, openTask } = store;
+  const { running, tasks, codes, hoursProjects, nowMin, stopWork, openTask } = store;
   if (!running)
     return (
       <Section label="working on">
         <div style={{ fontSize: "12px", color: COLORS.dim }}>
-          {canClock ? "// not clocked in — ▶ a task to start" : "// weekend — hours isn't tracked, so ▶ is off"}
+          // not clocked in — ▶ a task to start
         </div>
       </Section>
     );

@@ -1,6 +1,7 @@
-// Week summary — ties the per-day math together for one Mon–Fri week. See
-// ARCHITECTURE.md §7 ("Hours 2.0").
-import { workdays } from "./week.js";
+// Week summary — ties the per-day math together for one Mon–Sun week. See
+// ARCHITECTURE.md §7 ("Hours 2.0"). Weekend days count toward paid/logged
+// (so weekend work lands in the bank) but are never bookable.
+import { weekDays, isWeekend } from "./week.js";
 import { loggedByCode, paidMinutes, dayStatus, dayKind, isLeave, sumValues } from "./day.js";
 import { earnedByCode } from "./earned.js";
 import { addInto } from "./bank.js";
@@ -21,7 +22,7 @@ export function dayMinutesFor(settings) {
 export function summarizeWeek(weekStart, worklog, settings, { todayISO, nowMin } = {}) {
   const lunchMin = settings.lunchMin;
   const dayMin = dayMinutesFor(settings);
-  const days = workdays(weekStart).map((date) => {
+  const days = weekDays(weekStart).map((date) => {
     const day = worklog[date] || null;
     const isToday = date === todayISO;
     const opts = { lunchMin, nowMin: isToday ? nowMin : undefined };
@@ -30,13 +31,14 @@ export function summarizeWeek(weekStart, worklog, settings, { todayISO, nowMin }
       date,
       day,
       isToday,
+      weekend: isWeekend(date),
       isFuture: !!todayISO && date > todayISO,
       status: dayStatus(day, { isToday, isPast: !!todayISO && date < todayISO }),
       kind: dayKind(day, opts),
       paid: paidMinutes(day, opts),
       loggedByCode: logged,
       logged: sumValues(logged),
-      leave: isLeave(day),
+      leave: !isWeekend(date) && isLeave(day),
     };
   });
   const loggedTotalByCode = {};
@@ -54,7 +56,7 @@ export function summarizeWeek(weekStart, worklog, settings, { todayISO, nowMin }
     diff: paid - bookable,
     loggedByCode: loggedTotalByCode,
     loggedByDay: Object.fromEntries(days.map((d) => [d.date, d.loggedByCode])),
-    bookingDays: days.map((d) => ({ date: d.date, bookable: !d.leave })),
+    bookingDays: days.filter((d) => !d.weekend).map((d) => ({ date: d.date, bookable: !d.leave })),
     incomplete: days.filter((d) => d.status === "incomplete").map((d) => d.date),
     open: days.filter((d) => d.status === "open").map((d) => d.date),
     dayMin,

@@ -10,7 +10,6 @@ import { useProjects } from "../hooks/useProjects.js";
 import { useBookingCodes } from "../hooks/useBookingCodes.js";
 import { nowHHMM } from "../lib/timeUtils.js";
 import { toISO } from "../lib/dateUtils.js";
-import { isWeekend } from "../lib/hours2/week.js";
 import { isOpen, toggledStatus } from "../lib/worktasks/model.js";
 import { actualByTask, runningSegment, codeForTask } from "../lib/worktasks/time.js";
 import NowView from "../views/work/NowView.jsx";
@@ -58,9 +57,6 @@ export default function WorkTasksApp({ onHome }) {
   const todayISO = toISO(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const running = runningSegment(hours.worklog, todayISO);
-  // Hours never shows or counts weekends, so ▶ isn't offered then — time
-  // logged on a Saturday would be invisible there.
-  const canClock = !isWeekend(todayISO);
 
   // Clock times use the real current minute, not the 30s-stale `now`.
   const stopWork = () => hours.clockOut(toISO(new Date()), nowHHMM());
@@ -95,7 +91,6 @@ export default function WorkTasksApp({ onHome }) {
     codes: codes.codes,
     actual: actualByTask(hours.worklog, { todayISO, nowMin }),
     running,
-    canClock,
     todayISO,
     nowMin,
     nowMs: now.getTime(),
@@ -111,7 +106,7 @@ export default function WorkTasksApp({ onHome }) {
       }
     },
     startWork: (task) => {
-      if (!canClock || running?.taskId === task.id) return;
+      if (running?.taskId === task.id) return;
       const codeId = codeForTask(task, workProjects.projects, codes.codes);
       if (codeId) beginWork(task, codeId);
       else setPicking(task);

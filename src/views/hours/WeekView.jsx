@@ -1,4 +1,5 @@
-// One week — stats, per-code table, the five workdays, and the way into
+// One week — stats, per-code table, the days (weekend ones only when they
+// hold data or are today), and the way into
 // booking. See ARCHITECTURE.md §7 ("Hours 2.0").
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS } from "../../theme/colors.js";
@@ -113,7 +114,7 @@ export default function WeekView({ weekStart, store, now, go, replace }) {
       </Section>
 
       <div>
-        {s.days.map((d) => (
+        {s.days.filter((d) => !d.weekend || d.day || d.isToday).map((d) => (
           <Row key={d.date} onClick={() => go({ view: "day", date: d.date })} style={{ opacity: d.isFuture && d.status === "empty" ? 0.5 : 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <span style={{ fontSize: "13px", width: "56px", color: d.isToday ? COLORS.amber : COLORS.text }}>{dayLabel(d.date)}</span>
