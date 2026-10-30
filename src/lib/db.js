@@ -2,12 +2,14 @@ import { openDB } from "idb";
 import { timeToMinutes, minutesToTime } from "./timeUtils.js";
 import { TAG_PALETTE } from "../theme/colors.js";
 import { migrateHoursRecords } from "./hours2/migrate.js";
+import { CHANNEL, dbNameFor } from "./channel.js";
 
 // Single shared IndexedDB module — see ARCHITECTURE.md §4/§7 ("Shared schema").
 // Object stores for every entity in the data model are created up front so
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
-const DB_NAME = "manifest";
+// PR previews get their own database (`manifest@pr-<n>`) — see channel.js.
+const DB_NAME = dbNameFor(CHANNEL);
 const DB_VERSION = 14;
 
 let dbPromise = null;

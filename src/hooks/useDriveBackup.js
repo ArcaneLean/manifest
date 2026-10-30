@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { usePersistentState } from "./usePersistentState.js";
 import { getValidDriveToken, revokeDriveAccess, isDriveAuthConfigured } from "../lib/driveAuth.js";
 import { pushBackupSnapshot } from "../lib/driveBackup.js";
+import { IS_PREVIEW } from "../lib/channel.js";
 
 // Periodic push cadence while the app is open and connected — a personal,
 // single-user backup doesn't need to be fresher than this, and it keeps
@@ -44,7 +45,7 @@ export function useDriveBackup() {
   // silent background refresh on load, just repeated on a timer instead of
   // running once.
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || IS_PREVIEW) return;
     backupNow({ interactive: false });
     const id = setInterval(() => backupNow({ interactive: false }), BACKUP_INTERVAL_MS);
     return () => clearInterval(id);
@@ -68,7 +69,9 @@ export function useDriveBackup() {
   }, [setConnected]);
 
   return {
-    configured: isDriveAuthConfigured(),
+    // Off in PR previews — see pushBackupSnapshot. Also hides "restore from
+    // drive" in BackupsModal; file export/restore still works there.
+    configured: !IS_PREVIEW && isDriveAuthConfigured(),
     connected,
     status,
     error,

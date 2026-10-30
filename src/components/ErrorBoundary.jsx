@@ -1,5 +1,6 @@
 import { Component } from "react";
 import { COLORS } from "../theme/colors.js";
+import { storageKey } from "../lib/channel.js";
 
 // Last-resort catch for a render crash in whichever app is active. Without
 // this, an uncaught error unmounts the whole tree (blank white page) and,
@@ -20,7 +21,7 @@ export class ErrorBoundary extends Component {
 
   handleReset = () => {
     try {
-      localStorage.removeItem("manifest.nav.app");
+      localStorage.removeItem(storageKey("manifest.nav.app"));
     } catch {
       // localStorage unavailable — nothing to clear, just reload
     }

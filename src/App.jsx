@@ -10,6 +10,7 @@ import WeatherApp from "./apps/WeatherApp.jsx";
 import WorkTasksApp from "./apps/WorkTasksApp.jsx";
 import LedgerApp from "./apps/LedgerApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
+import { PreviewBand } from "./components/PreviewBand.jsx";
 
 // Day Planner (DayPlannerApp.jsx) is archived — unused, kept unwired. See
 // ARCHITECTURE.md §5/§7.
@@ -68,6 +69,7 @@ export default function App() {
   if (activeApp === "home" || !APPS[activeApp]) {
     return (
       <>
+        <PreviewBand />
         <LauncherView onOpen={openApp} />
         <UpdatePrompt />
       </>
@@ -77,6 +79,7 @@ export default function App() {
   const ActiveApp = APPS[activeApp];
   return (
     <>
+      <PreviewBand />
       <ActiveApp onHome={goHome} />
       <UpdatePrompt />
     </>
