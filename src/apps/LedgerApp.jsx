@@ -24,7 +24,7 @@ const NAV_ITEMS = [
 // Ledger — personal accounting, see ARCHITECTURE.md §7 ("Ledger"). Same
 // shell as Hours: all data loaded once here and passed down, a bottom tab
 // bar, and an in-memory drill-down stack (a month, a debt) that the TopBar
-// back arrow pops before leaving the app.
+// back arrow pops (then returns to the "now" tab) before leaving the app.
 export default function LedgerApp({ onHome }) {
   const [tab, setTab] = usePersistentState("manifest.ledger.tab", "now");
   const [hidden, setHidden] = usePersistentState("manifest.ledger.hidden", false);
@@ -49,7 +49,13 @@ export default function LedgerApp({ onHome }) {
     window.scrollTo(0, 0);
   }, [route?.view, route?.debtId, tab]);
 
-  const onBack = () => (stack.length ? back() : onHome());
+  // Pop the drill-down stack first, then fall back to the root "now" tab
+  // (plain "ledger"), and only leave the app from there.
+  const onBack = () => {
+    if (stack.length) back();
+    else if (tab !== "now") setTab("now");
+    else onHome();
+  };
   const crumb = route?.view === "month" ? monthLabel(route.month) : route?.view === "debt" ? store.debts.find((d) => d.id === route.debtId)?.name : null;
   const title = ["ledger", tab === "now" && !route ? null : route?.view === "month" ? "months" : tab, crumb].filter(Boolean).join(" / ");
   const props = { store, go, replace, back, onOpenLine: setEditingLine };
