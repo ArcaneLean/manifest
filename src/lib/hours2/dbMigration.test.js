@@ -6,6 +6,7 @@ import { openDB } from "idb";
 import { getDB } from "../db.js";
 import { restoreBackupSnapshot, buildBackupSnapshot, SNAPSHOT_VERSION } from "../backupSnapshot.js";
 import { summarizeWeek, DEFAULT_SETTINGS } from "./summary.js";
+import { LEDGER_STORES } from "../ledger/io.js";
 
 const projects = [
   { id: "p-hq", name: "HQPack", color: "#c47b8b" },
@@ -43,6 +44,11 @@ describe("DB v12 upgrade", () => {
   it("also creates the v13 Work tasks stores", async () => {
     const db = await getDB();
     for (const name of ["workTasks", "workProjects", "workTags"]) expect(db.objectStoreNames.contains(name)).toBe(true);
+  });
+
+  it("also creates the v14 Ledger stores", async () => {
+    const db = await getDB();
+    for (const name of LEDGER_STORES) expect(db.objectStoreNames.contains(name)).toBe(true);
   });
 
   it("migrates worklog segments to codes and keeps logged totals", async () => {
