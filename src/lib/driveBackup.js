@@ -10,6 +10,7 @@
 // visible clutter in the user's Drive.
 import { getDeviceId } from "./deviceId.js";
 import { buildBackupSnapshot } from "./backupSnapshot.js";
+import { IS_PREVIEW } from "./channel.js";
 
 const FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
@@ -70,7 +71,12 @@ async function updateFile(token, fileId, jsonBody) {
 // the cached id turns out stale (file removed from Drive some other way),
 // it falls back to searching by name once and re-creates if that also
 // comes up empty.
+//
+// Never from a PR preview: it shares this device's deviceId, so it would
+// overwrite the real app's backup with preview data. useDriveBackup already
+// reports Drive as unconfigured in previews; this is the backstop.
 export async function pushBackupSnapshot(token) {
+  if (IS_PREVIEW) throw new Error("drive backup is disabled in previews");
   const filename = backupFilename();
   const body = JSON.stringify(await buildBackupSnapshot());
 

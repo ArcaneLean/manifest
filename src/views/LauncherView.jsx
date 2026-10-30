@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight, ArchiveRestore, Briefcase, Wallet } from "lucide-react";
+import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight, ArchiveRestore, Briefcase, Wallet, GitBranch } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 import { useDriveBackup } from "../hooks/useDriveBackup.js";
 import { DriveBackupButton } from "../components/DriveBackupButton.jsx";
 import { BackupsModal } from "../components/BackupsModal.jsx";
+import { VersionsModal } from "../components/VersionsModal.jsx";
+import { IS_PREVIEW } from "../lib/channel.js";
 
 // Day Planner is archived (unused) — its tile was removed here. See ARCHITECTURE.md §5/§7.
 const APPS = [
@@ -30,6 +32,7 @@ export default function LauncherView({ onOpen }) {
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
   const drive = useDriveBackup();
   const [backupsOpen, setBackupsOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
 
   return (
     <div
@@ -54,6 +57,9 @@ export default function LauncherView({ onOpen }) {
               ~/manifest
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => setVersionsOpen(true)} title="switch version (main / pr previews)" style={headerIconButton}>
+                <GitBranch size={13} color={IS_PREVIEW ? COLORS.amber : COLORS.dim} />
+              </button>
               <button onClick={() => setBackupsOpen(true)} title="export / restore backups" style={headerIconButton}>
                 <ArchiveRestore size={13} color={COLORS.dim} />
               </button>
@@ -102,6 +108,7 @@ export default function LauncherView({ onOpen }) {
           ))}
         </div>
       </div>
+      {versionsOpen && <VersionsModal onClose={() => setVersionsOpen(false)} />}
       {backupsOpen && (
         <BackupsModal driveConfigured={drive.configured} driveConnected={drive.connected} onClose={() => setBackupsOpen(false)} />
       )}

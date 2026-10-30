@@ -27,7 +27,7 @@ Purpose: single source of truth to hand to Claude Code when scaffolding the real
 |---|---|---|
 | UI | React, installable PWA | single codebase, works on Android + any desktop browser |
 | Local storage | IndexedDB | source of truth, offline-first, survives reload |
-| Hosting | GitHub Pages, auto-deployed from `main` by GitHub Actions | the move to a Cloudflare Worker (§6.2) is shelved — not doing it now |
+| Hosting | GitHub Pages, auto-deployed from `main` by GitHub Actions, plus a preview of every open PR at `preview/pr-<n>/` (§7, "PR previews") | the move to a Cloudflare Worker (§6.2) is shelved — not doing it now |
 | Work backend *(shelved — not now)* | ~~Cloudflare Worker (`/api/*` REST for the PWA, `/mcp` for Claude) + D1~~ | kept as a parked plan in §6.2; not being built now |
 | Updates | Service worker | detects new deployed assets, prompts refresh — no separate release/versioning step needed |
 | Tests / CI | Vitest (+ `fake-indexeddb` for DB migration tests); `ci.yml` runs `npm test` + build on every PR, `deploy.yml` runs `npm test` before deploying | a failing test blocks the deploy — added with Hours 2.0, whose bank math and data migration are the riskiest code in the app |
@@ -1148,6 +1148,35 @@ These came up in the process and were deliberately deferred — listed here so t
   - **Later / not built**: charts (net worth and forecast lines); importing a bank CSV export
     to fill a month's category totals; scenarios (comparing alternative plans); linking debt
     key dates into Countdowns.
+
+- **PR previews (implemented)**: every open same-repo PR is deployed next to the real app, and
+  the launcher's branch icon switches between them.
+  - **Hosting**: Pages takes one whole site per deploy, so `deploy.yml` rebuilds everything on
+    each run: main at the root, then `.github/scripts/build-previews.sh` builds each open PR's
+    head into `preview/pr-<n>/` and writes `versions.json` (main + each preview that built) for
+    the picker. It runs on push to main and on `pull_request_target` (opened / reopened /
+    synchronize / closed), so a closed or merged PR's preview just isn't rebuilt. That trigger
+    runs on main (the `github-pages` environment only accepts main), using main's copy of the
+    workflow and script. Forks are skipped. A PR that fails to build is left out with a
+    warning, so it never blocks main's deploy. Tests aren't rerun for previews; `ci.yml`
+    already runs them.
+  - **Same origin, separate data**: every build shares the Pages origin, so IndexedDB and
+    localStorage are shared too. A preview that bumped `DB_VERSION` would otherwise upgrade the
+    real database and lock main out (`VersionError`). `src/lib/channel.js` (`VITE_CHANNEL`,
+    `pr-<n>` in previews, unset = main) gives previews their own database (`manifest@pr-<n>`)
+    and suffixes `usePersistentState` keys with `@pr-<n>`. Main's names are unchanged. The
+    picker's "copy from main" fills the preview from the real database (opened without a
+    version, read-only, closed straight away, then the normal restore path); "start empty"
+    deletes the preview's database. Data never flows preview → main.
+  - **Drive backup is off in previews**: they share the device's `deviceId`, so a preview push
+    would overwrite the real backup. `useDriveBackup` reports Drive as unconfigured there, and
+    `pushBackupSnapshot` refuses as a backstop. File export/restore still works.
+  - **Service worker**: main's worker scope covers `preview/`, and its SPA fallback would serve
+    main's `index.html` for a preview URL, so main's build sets
+    `navigateFallbackDenylist: [/\/preview\//]`. Each preview registers its own narrower-scoped
+    worker (so its update prompt works) and its own manifest name (`Manifest (pr-<n>)`).
+  - **UI**: `PreviewBand` (amber strip, "PREVIEW #n · branch · own data") on every preview
+    screen; `VersionsModal` from the launcher header.
 
 ## 8. Suggested build order for Claude Code
 

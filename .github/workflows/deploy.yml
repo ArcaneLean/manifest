@@ -1,14 +1,21 @@
 name: Deploy to GitHub Pages
 
+# One Pages site holds main at the root plus a preview of every open PR at
+# preview/pr-<n>/ (see ARCHITECTURE.md §7, "PR previews"). Pages only takes a
+# whole site per deploy, so every run rebuilds main and all open PRs: a push
+# to main, a push to a PR branch, and a PR opening/closing all redeploy, and
+# a closed or merged PR's preview simply isn't rebuilt.
+#
+# pull_request_target (not pull_request) so the run executes on main: the
+# github-pages environment only accepts deploys from main, and this workflow
+# file and the preview build script are always main's copy, never a PR's.
+# Only same-repo PRs get previews (build-previews.sh skips forks).
 on:
   push:
     branches: [main]
+  pull_request_target:
+    types: [opened, reopened, synchronize, closed]
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -17,8 +24,22 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Builds PR code, so it gets read-only access; the Pages/OIDC permissions
+    # are confined to the deploy job, which runs no repo code.
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      # Public OAuth client ID for the optional Google Calendar sync —
+      # see .env.example. Not secret, but project-specific, so it's set
+      # as a repo variable (Settings → Secrets and variables → Actions →
+      # Variables) rather than committed. Previews share main's origin, so
+      # the same authorized origin covers them.
+      VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -27,12 +48,9 @@ jobs:
       # A failing test stops the deploy — see ci.yml for the PR-side run.
       - run: npm test
       - run: npm run build
+      - run: .github/scripts/build-previews.sh
         env:
-          # Public OAuth client ID for the optional Google Calendar sync —
-          # see .env.example. Not secret, but project-specific, so it's set
-          # as a repo variable (Settings → Secrets and variables → Actions →
-          # Variables) rather than committed.
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -40,6 +58,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
