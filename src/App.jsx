@@ -8,6 +8,7 @@ import HabitsApp from "./apps/HabitsApp.jsx";
 import ShortlistApp from "./apps/ShortlistApp.jsx";
 import WeatherApp from "./apps/WeatherApp.jsx";
 import WorkTasksApp from "./apps/WorkTasksApp.jsx";
+import LedgerApp from "./apps/LedgerApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 
 // Day Planner (DayPlannerApp.jsx) is archived — unused, kept unwired. See
@@ -20,6 +21,7 @@ const APPS = {
   habits: HabitsApp,
   shortlist: ShortlistApp,
   weather: WeatherApp,
+  ledger: LedgerApp,
 };
 
 // Home screen launches into one of three apps; each app owns its own

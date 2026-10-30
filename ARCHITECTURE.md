@@ -180,6 +180,76 @@ interface WorkTask {           // `workTasks` store
 }
 ```
 
+```ts
+// Ledger (§7) — every amount is integer cents, signed as the bank shows it.
+interface FinAccount {         // `finAccounts`
+  id: string;
+  name: string;                // "ASN Betaal"
+  type: "checking" | "savings" | "other";
+  available: boolean;          // counts toward spendable money
+  earmark?: string | null;     // "Vacation", "Education", …
+  archived?: boolean;
+  order: number;
+  createdAt: number;
+}
+
+interface FinBalance {         // `finBalances`, one per account per month
+  key: string;                 // `${month}|${accountId}`
+  month: string;               // "YYYY-MM" — balance at the end of that month
+  accountId: string;
+  amount: number;
+  checkedOn: string;           // ISO date it was entered
+}
+
+interface FinLine {            // `finLines` — one of the bank's categories
+  id: string;
+  category: string;            // the bank's category name, 1:1
+  source?: string | null;      // optional split within a category ("Camper ver.")
+  kind: "income" | "expense";
+  nature: "fixed" | "variable";
+  status: "fixed" | "estimate" | "buffer" | "dropped"; // of the expected amount
+  rules: { id: string; amount: number; every: 1 | 2 | 3 | 4 | 6 | 12; from: string; until?: string | null }[];
+  overrides: Record<string, number>; // month -> amount, replaces the rules
+  note?: string | null;
+  archived?: boolean;
+  order: number;
+  createdAt: number;
+}
+
+interface FinActual {          // `finActuals`, one per line per month
+  key: string;                 // `${month}|${lineId}`
+  month: string;
+  lineId: string;
+  amount: number;              // the bank's category total for the month
+}
+
+interface FinMonth {           // `finMonths`
+  month: string;
+  bankNet: number | null;      // the bank's own net total for the month
+  closedAt: number | null;
+}
+
+interface FinDebt {            // `finDebts`
+  id: string;
+  name: string;
+  kind: "duo" | "annuity" | "fixed";
+  rate: number;                // annual, 0.0046 = 0.46%
+  rateValidUntil?: string | null;
+  firstPaymentMonth: string;   // before it: grace
+  lastPaymentMonth?: string | null;
+  graceInterest: "compound" | "simple";
+  assessmentIncome?: number | null; // duo: toetsingsinkomen / year
+  exemptIncome?: number | null;     // duo: draagkrachtvrije voet / year
+  fixedPayment?: number | null;     // fixed
+  lineId?: string | null;      // the line the bank books its payments on
+  checks: { month: string; balance: number; checkedOn?: string }[]; // balance at the start of month
+  payments: Record<string, number>; // month -> actually paid
+  notes?: string | null;
+  archived?: boolean;
+  createdAt: number;
+}
+```
+
 Hours' numbers (paid, logged, earned, booked, the per-code bank) are all derived at render
 time by the pure modules in `src/lib/hours2/` — nothing derived is stored except each
 booking's `earned` snapshot. See §7 "Hours 2.0" for the rules.
@@ -210,6 +280,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
 | Work tasks | Now, Projects (→ project), Board, Log | bottom tab bar (4 tabs) + project drill-down | separate from the personal Task manager (a fork, not a mode); projects link to Hours booking codes and a task can start the Hours clock — see §7 "Work tasks" |
 | Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
+| Ledger | Now, Months (→ month), Plan, Debts (→ debt) | bottom tab bar (4 tabs) + drill-down | personal accounting: assets, debts, monthly bank category totals, expected income/expenses and per-debt prognosis — see §7 "Ledger" |
 | Weather | Weather | none (single view) | cycling forecast cross-checked across independent models for the user's recurring ride windows — see §7 "Weather" |
 | *(not built)* | — | — | settings — see §7 |
 
@@ -225,6 +296,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Hours (weeks/week/day/booking/bank) | worklog, projects, bookingcodes, bookings, hoursSettings | worklog, bookings, hoursSettings | `src/views/hours/`; all Hours data loaded once in `HoursApp` and passed down |
 | Projects | projects, bookingcodes (+ worklog/bookings to tell which codes are used) | projects, bookingcodes | CRUD, 8-color curated palette (same `ColorPicker`/palette as Tags), plus each project's booking codes |
 | Work (now/projects/board/log) | workTasks, workProjects, workTags, worklog, projects, bookingcodes | workTasks, workProjects, workTags, worklog (start/stop working) | `src/views/work/`; all data loaded once in `WorkTasksApp` and passed down, like Hours |
+| Ledger (now/months/month/plan/debts) | finAccounts, finBalances, finLines, finActuals, finMonths, finDebts | same | `src/views/ledger/`; all data loaded once in `LedgerApp` and passed down, like Hours |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -236,7 +308,7 @@ since several views already depend on the *same* underlying task records.
 ### 6.1 Personal data (unchanged)
 
 - IndexedDB is the only thing the personal apps (Task manager, Countdowns, Habits, Shortlist,
-  Weather) read/write during normal use.
+  Weather, Ledger) read/write during normal use.
 - Periodically (or on-demand), a full snapshot is pushed to Google Drive — one file per
   device, not one shared file, so this is **backup, not cross-device sync**: opening the app
   on a second device does not pull the first device's data. This was a deliberate choice over
@@ -1003,6 +1075,79 @@ These came up in the process and were deliberately deferred — listed here so t
     `src/views/work/`.
   - **Later / not built**: a weekly-review prompt (stale waiting items, idle projects);
     exporting the Log; templates/recurrence, only if work needs them.
+
+- **Ledger (implemented)**: personal accounting on the phone, replacing a monthly `.ods`
+  spreadsheet (sheets: Assets, Debts, Income & Expenses with an EXPECTED section, one sheet per
+  debt). Local-first like the other personal apps.
+  - **Granularity: the bank's category totals, not transactions.** Every transaction is
+    already categorized in the banking app, which then shows per-category totals for the month.
+    Re-entering transactions here would be duplicate work, so a month holds one amount per
+    **line**. A line is one of the bank's categories, kept 1:1 with the bank's names, with an
+    optional `source` to split a category the way the old sheet did ("Verzekering · Camper
+    ver."). Lines can be added at any time, inline from the month view. The bank's own net
+    total for a month (`FinMonth.bankNet`) can be entered too, for months with no category
+    breakdown (historic net totals) and as a cross-check.
+  - **Amounts** are integer cents, signed as the bank shows them. Typing an unsigned amount
+    on an expense line means an expense; an explicit `+` is a refund. Dutch and English number
+    formats are both accepted (`money.js`).
+  - **Assets**: accounts (type, available yes/no, earmark) with one balance snapshot per
+    account per month, so net worth has history (the sheet overwrote balances). An account
+    without a snapshot for a month carries its latest one forward. Accounts not checked in 35
+    days get a `stale` badge.
+  - **Expected income & expenses** replace the sheet's typed-out future columns. A line's
+    expected amount for a month is: 0 if its status is `dropped`; else a per-month override if
+    there is one; else minus the payments of debts linked to it; else the sum of its rules
+    (`amount` every 1/2/3/4/6/12 months from `from`, optionally `until`). Status
+    fixed/estimate/buffer/dropped carries over the sheet's labels. The old "Maandelijks" sheet
+    was an outdated prognosis and was dropped.
+  - **Debts feed the forecast.** The sheet's expected section had no rows for debt payments
+    (e.g. the chalet loan's ~€574/mo from Aug '27). Now each debt's schedule is part of the
+    forecast: as its own expense row, or, if the bank books the payments on a category, on
+    that line (`FinDebt.lineId`) so they aren't counted twice.
+  - **Debt engine** (`debt.js`, pure): one schedule from the latest balance check, month by
+    month. `duo`: interest compounds monthly, nothing due before the first payment month, then
+    the statutory annuity over the term (fixed at the first payment), capped by draagkracht
+    (4% × (assessment income − exempt income) / 12); what's left after the last payment month
+    is forgiven. `annuity`: recalculated each month over the months left, so an overpayment
+    lowers later payments instead of shortening the term (the sheet's `MAX(agreed, actual)`
+    model). `fixed`: a fixed amount. `graceInterest: "simple"` accrues interest on the
+    principal during grace and adds it at the first payment (the chalet loan's contract).
+    Recorded actual payments replace the scheduled one for their month. A what-if (extra per
+    month, one-off payment) shows interest saved and the new end. Tests reproduce the old
+    sheet's figures (chalet €574,13 first payment, DUO €8,16 draagkracht payment and
+    €6.728,60 remaining interest). Unlike the sheet, remaining interest includes the chalet's
+    €2.000 grace-year interest, and the chalet balance is derived rather than typed in.
+  - **Views** (bottom tab bar):
+    1. **Now**: net worth (assets − debts), available and earmarked money, a "close <month>"
+       button for the next unclosed month, accounts (tap to edit), debts, the next 3 months'
+       expected net and available balance, and Ledger-only export/import.
+    2. **Months**: every recorded month with its net, newest first, plus "+ month" to backfill
+       history. A month opens the **month view**, which is also the monthly close: end-of-month
+       balances, the bank's net, the actual per line with its expected amount next to it, debt
+       payments, then a summary: actual vs expected, the balance change across all accounts,
+       and the **unexplained** part (balance change − net of the lines), plus lines vs the
+       bank's net. "close" stamps `closedAt` and logs a `$ closed …` line. Every field saves
+       on its own, so history can be corrected the same way.
+    3. **Plan**: next month's expected per line (tap → line editor with rules, one-off months
+       and its actuals history), and the forecast of available money over 1/3/5/10 years, with
+       the lowest point. A forecast month expands into its per-line breakdown.
+    4. **Debts**: totals, then each debt (owed, next payment, rate-ends badge within 90 days
+       of `rateValidUntil`). A debt opens its prognosis: owed, statutory/draagkracht amounts,
+       still to pay, payoff or forgiven, balance checks, what-if, and the schedule by year.
+  - **Hide amounts**: an eye toggle on Now masks every amount (`€ •••`) app-wide, for using it
+    with someone looking.
+  - **Storage**: DB v14 adds `finAccounts`, `finBalances`, `finLines`, `finActuals`,
+    `finMonths`, `finDebts` (plain `ensureStore`, no migration). They're in the Drive/file
+    backup automatically. Ledger also has its own export/import (`io.js`): a `manifest-ledger`
+    JSON file that replaces only the Ledger stores. That's how the old spreadsheet's history
+    was brought in (converted once outside the repo, so no financial data is committed).
+  - **Code**: pure logic in `src/lib/ledger/` (`money.js`, `month.js`, `debt.js`, `plan.js`
+    expected amounts and forecast, `summary.js` balances/month totals/reconciliation, `io.js`),
+    each with `*.test.js`. Repo `ledgerRepo.js`, hook `useLedger`, views in
+    `src/views/ledger/`, app `LedgerApp.jsx`.
+  - **Later / not built**: charts (net worth and forecast lines); importing a bank CSV export
+    to fill a month's category totals; scenarios (comparing alternative plans); linking debt
+    key dates into Countdowns.
 
 ## 8. Suggested build order for Claude Code
 

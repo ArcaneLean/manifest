@@ -8,7 +8,7 @@ import { migrateHoursRecords } from "./hours2/migrate.js";
 // later views (Tags, Templates, Countdowns, Hours) don't require a version
 // bump / migration just to add a store.
 const DB_NAME = "manifest";
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 
 let dbPromise = null;
 
@@ -164,6 +164,18 @@ export function getDB() {
         ensureStore(db, "workTasks", { keyPath: "id" });
         ensureStore(db, "workProjects", { keyPath: "id" });
         ensureStore(db, "workTags", { keyPath: "id" });
+        // v14: Ledger app — see ARCHITECTURE.md §7 ("Ledger"). Accounts and
+        // one balance snapshot per account per month (keyed
+        // `${month}|${accountId}`), income/expense lines (the bank's own
+        // categories, with their expected-amount rules) and one actual per
+        // line per month (keyed `${month}|${lineId}`), per-month records
+        // (bank net total, closed), and debts. Amounts are integer cents.
+        ensureStore(db, "finAccounts", { keyPath: "id" });
+        ensureStore(db, "finBalances", { keyPath: "key" });
+        ensureStore(db, "finLines", { keyPath: "id" });
+        ensureStore(db, "finActuals", { keyPath: "key" });
+        ensureStore(db, "finMonths", { keyPath: "month" });
+        ensureStore(db, "finDebts", { keyPath: "id" });
         if (db.objectStoreNames.contains("weatherCache")) db.deleteObjectStore("weatherCache");
         db.createObjectStore("weatherCache", { keyPath: "key" });
       },

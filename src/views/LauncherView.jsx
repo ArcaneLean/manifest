@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight, ArchiveRestore, Briefcase } from "lucide-react";
+import { ListChecks, Hourglass, Clock, Flame, ListFilter, CloudSun, ChevronRight, ArchiveRestore, Briefcase, Wallet } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { useClock } from "../hooks/useClock.js";
 import { useDriveBackup } from "../hooks/useDriveBackup.js";
@@ -20,6 +20,7 @@ const APPS = [
   { key: "hours", label: "hours", path: "~/hours", icon: Clock, desc: "work log" },
   { key: "habits", label: "habits", path: "~/habits", icon: Flame, desc: "streaks · frequency" },
   { key: "shortlist", label: "shortlist", path: "~/shortlist", icon: ListFilter, desc: "won't · could · want to do" },
+  { key: "ledger", label: "ledger", path: "~/ledger", icon: Wallet, desc: "assets · debts · months · plan" },
   { key: "weather", label: "weather", path: "~/weather", icon: CloudSun, desc: "cycling forecast · multi-source" },
 ];
 
