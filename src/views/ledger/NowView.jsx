@@ -101,6 +101,7 @@ export default function NowView({ store, go, hidden, setHidden }) {
               sub={[a.type, a.available ? null : "not available", a.earmark].filter(Boolean).join(" · ")}
               right={
                 <span style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  {b?.unchecked && <Badge color={COLORS.amberDim}>unchecked</Badge>}
                   {stale.has(a.id) && <Badge color={COLORS.amberDim}>stale</Badge>}
                   <Money cents={b?.amount ?? null} />
                 </span>

@@ -199,6 +199,7 @@ interface FinBalance {         // `finBalances`, one per account per month
   accountId: string;
   amount: number;
   checkedOn: string;           // ISO date it was entered
+  unchecked?: boolean;         // assumed, not looked up — see §7 "Ledger"
 }
 
 interface FinLine {            // `finLines` — one of the bank's categories
@@ -221,6 +222,7 @@ interface FinActual {          // `finActuals`, one per line per month
   month: string;
   lineId: string;
   amount: number;              // the bank's category total for the month
+  unchecked?: boolean;         // assumed (e.g. the expected amount), not seen
 }
 
 interface FinMonth {           // `finMonths`
@@ -1128,6 +1130,18 @@ These came up in the process and were deliberately deferred — listed here so t
        and the **unexplained** part (balance change − net of the lines), plus lines vs the
        bank's net. "close" stamps `closedAt` and logs a `$ closed …` line. Every field saves
        on its own, so history can be corrected the same way.
+       **Unchecked values**: each balance and line has a toggle to mark its value as assumed
+       rather than looked up — an account without easy access, and the expenses that should
+       have been taken from it. Marking one with nothing entered fills in the carried balance
+       or the line's expected amount, which can then be corrected. Unchecked values count in
+       every total (net worth, actual net, the month's figures) but are left out of the
+       reconciliation: unexplained = change of the checked accounts − net of the checked
+       lines, and lines vs bank net uses the checked lines only. An unchecked balance is not a
+       check for the `stale` badge, and a carried unchecked balance stays flagged. The month's
+       header, the close log, Months (badge) and Now's accounts show what's still unchecked;
+       tapping the toggle again marks the value as verified. When an account is checked again
+       after unchecked months, any error in the assumptions shows up in that month's
+       unexplained.
     3. **Plan**: next month's expected per line (tap → line editor with rules, one-off months
        and its actuals history), and the forecast of available money over 1/3/5/10 years, with
        the lowest point. A forecast month expands into its per-line breakdown.

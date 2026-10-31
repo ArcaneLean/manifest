@@ -45,6 +45,7 @@ export default function MonthsView({ store, go }) {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "12.5px", flex: 1 }}>{monthLabel(s.month)}</span>
             {s.closedAt ? <Badge color={COLORS.sage}>closed</Badge> : null}
+            {s.unchecked.count ? <Badge color={COLORS.amberDim}>{s.unchecked.count} unchecked</Badge> : null}
             {s.unexplained ? <Badge color={COLORS.amberDim}>Δ</Badge> : null}
             <Money cents={s.net} signed color={true} style={{ fontSize: "12.5px", fontWeight: 600 }} />
           </div>

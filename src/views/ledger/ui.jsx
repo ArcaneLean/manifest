@@ -2,6 +2,7 @@
 // Page/Header/Section etc. come from Hours' UI kit and Sheet/Field from
 // Work's, so Ledger looks like the rest of the app (§3).
 import { createContext, useContext, useEffect, useState } from "react";
+import { CircleCheck, CircleDashed } from "lucide-react";
 import { COLORS } from "../../theme/colors.js";
 import { formatCents, parseAmount, centsToInput } from "../../lib/ledger/money.js";
 import { MONO, timeInputStyle } from "../hours/ui.jsx";
@@ -118,3 +119,21 @@ export function downloadJSON(filename, data) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// Toggle beside an amount: checked (looked up) or unchecked (assumed — an
+// account without easy access, or what should have been taken from it).
+export function CheckToggle({ unchecked, onChange, disabled }) {
+  return (
+    <button
+      onClick={() => !disabled && onChange(!unchecked)}
+      aria-label={unchecked ? "mark checked" : "mark unchecked"}
+      aria-pressed={!!unchecked}
+      title={unchecked ? "unchecked — tap when verified" : "mark unchecked"}
+      style={{ background: "none", border: "none", padding: "4px", cursor: disabled ? "default" : "pointer", display: "inline-flex", opacity: disabled ? 0.25 : 1 }}
+    >
+      {unchecked ? <CircleDashed size={15} color={COLORS.amber} /> : <CircleCheck size={15} color={COLORS.dim} style={{ opacity: 0.45 }} />}
+    </button>
+  );
+}
+
+export const uncheckedInputStyle = { borderStyle: "dashed", color: COLORS.amber };

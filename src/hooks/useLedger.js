@@ -45,11 +45,23 @@ export function useLedger() {
     for (const b of data.finBalances) if (b.accountId === id) remove("finBalances", b.key);
     remove("finAccounts", id);
   };
-  // `amount` null clears that month's snapshot for the account.
+  // `amount` null clears that month's snapshot for the account. An
+  // unchecked snapshot stays unchecked when its amount is edited.
   const setBalance = (month, accountId, amount) => {
     const key = balanceKey(month, accountId);
+    const prev = data.finBalances.find((b) => b.key === key);
     if (amount == null) remove("finBalances", key);
-    else put("finBalances", { key, month, accountId, amount, checkedOn: todayISO() });
+    else put("finBalances", { key, month, accountId, amount, checkedOn: todayISO(), ...(prev?.unchecked ? { unchecked: true } : {}) });
+  };
+  // Marks a month's balance as assumed rather than looked up (`amount` is
+  // what to assume when there's no snapshot yet), or back as checked.
+  const setBalanceUnchecked = (month, accountId, unchecked, amount) => {
+    const key = balanceKey(month, accountId);
+    const prev = data.finBalances.find((b) => b.key === key);
+    const value = prev?.amount ?? amount;
+    if (value == null) return;
+    const { unchecked: _, ...rest } = prev || { key, month, accountId };
+    put("finBalances", { ...rest, amount: value, checkedOn: todayISO(), ...(unchecked ? { unchecked: true } : {}) });
   };
 
   const saveLine = (line) =>
@@ -60,8 +72,19 @@ export function useLedger() {
   };
   const setActual = (month, lineId, amount) => {
     const key = actualKey(month, lineId);
+    const prev = data.finActuals.find((a) => a.key === key);
     if (amount == null) remove("finActuals", key);
-    else put("finActuals", { key, month, lineId, amount });
+    else put("finActuals", { key, month, lineId, amount, ...(prev?.unchecked ? { unchecked: true } : {}) });
+  };
+  // Same for a line: unchecked = what should have gone through (`amount`,
+  // usually the expected one, when nothing's entered yet) but couldn't be
+  // seen at the close.
+  const setActualUnchecked = (month, lineId, unchecked, amount) => {
+    const key = actualKey(month, lineId);
+    const prev = data.finActuals.find((a) => a.key === key);
+    const value = prev?.amount ?? amount;
+    if (value == null) return;
+    put("finActuals", { key, month, lineId, amount: value, ...(unchecked ? { unchecked: true } : {}) });
   };
 
   const updateMonth = (month, patch) => {
@@ -96,9 +119,11 @@ export function useLedger() {
     saveAccount,
     deleteAccount,
     setBalance,
+    setBalanceUnchecked,
     saveLine,
     deleteLine,
     setActual,
+    setActualUnchecked,
     updateMonth,
     saveDebt,
     deleteDebt,

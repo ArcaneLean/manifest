@@ -54,6 +54,33 @@ describe("monthSummary", () => {
   });
 });
 
+describe("unchecked values", () => {
+  // "edu" can't be looked at easily: its balance is assumed, and so is the
+  // tuition taken from it.
+  const lines2 = [...lines, { id: "tuition", kind: "expense", status: "fixed", rules: [] }];
+  const balances2 = balances.map((b) => (b.month === "2026-08" && b.accountId === "edu" ? { ...b, amount: 680000, unchecked: true } : b));
+  const actuals2 = [...actuals, { month: "2026-08", lineId: "tuition", amount: -20000, unchecked: true }];
+  const store = { accounts, balances: balances2, lines: lines2, actuals: actuals2, debts: [], months: [{ month: "2026-08", bankNet: 251000 }] };
+
+  it("counts them in the totals", () => {
+    const s = monthSummary(store, "2026-08");
+    expect(s.actual).toMatchObject({ expense: -29924, net: 231206 });
+    expect(s.delta).toBe(20000 - 20000);
+  });
+  it("leaves them out of the reconciliation", () => {
+    const s = monthSummary(store, "2026-08");
+    expect(s.unchecked).toMatchObject({ accounts: ["edu"], lines: ["tuition"], count: 2, delta: -20000, net: -20000 });
+    // checked: pay +20000 − (salary + food) 251206
+    expect(s.unexplained).toBe(20000 - 251206);
+    expect(s.vsBank).toBe(206);
+  });
+  it("carries the flag forward and doesn't count as a check", () => {
+    expect(balancesAt(accounts, balances2, "2026-09").edu).toMatchObject({ amount: 680000, carried: true, unchecked: true });
+    // edu's last real check is July's now, so it's stale where it wasn't before
+    expect(staleAccounts(accounts, balances2, "2026-09-20")).toEqual(["save", "edu"]);
+  });
+});
+
 describe("months", () => {
   it("lists every recorded month, newest first", () => {
     expect(knownMonths({ balances, actuals, months: [{ month: "2025-01" }] })).toEqual(["2026-08", "2026-07", "2025-01"]);
