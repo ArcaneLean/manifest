@@ -230,7 +230,7 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
                 <span style={{ ...smallDim, textAlign: "right" }}>
                   {summary.unchecked.accounts.length > 0 && (
                     <div>
-                      {summary.unchecked.accounts.length} balance(s) <Money cents={summary.unchecked.delta} signed />
+                      {summary.unchecked.accounts.length} balance(s){summary.delta !== null && <> <Money cents={summary.unchecked.delta} signed /></>}
                     </div>
                   )}
                   {summary.unchecked.lines.length > 0 && (
