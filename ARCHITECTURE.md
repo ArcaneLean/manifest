@@ -1097,7 +1097,7 @@ These came up in the process and were deliberately deferred — listed here so t
     without a snapshot for a month carries its latest one forward. Accounts not checked in 35
     days get a `stale` badge.
   - **Expected income & expenses** replace the sheet's typed-out future columns. A line's
-    expected amount for a month is: 0 if its status is `dropped`; else a per-month override if
+    expected amount for a month is: 0 if its status is `dropped` or it's archived; else a per-month override if
     there is one; else minus the payments of debts linked to it; else the sum of its rules
     (`amount` every 1/2/3/4/6/12 months from `from`, optionally `until`). Status
     fixed/estimate/buffer/dropped carries over the sheet's labels. The old "Maandelijks" sheet

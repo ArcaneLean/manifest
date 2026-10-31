@@ -21,6 +21,9 @@ describe("expectedFor", () => {
     expect(expectedFor(pacht, "2029-01")).toBe(0);
     expect(expectedFor(dropped, "2026-05")).toBe(0);
   });
+  it("expects nothing from an archived line", () => {
+    expect(expectedFor({ ...salary, archived: true }, "2026-12")).toBe(0);
+  });
   it("uses the linked debt's payments instead of the rules", () => {
     const schedules = debtSchedules([{ ...debt, lineId: "loan" }]);
     expect(expectedFor(loanLine, "2026-10", schedules)).toBe(0);
@@ -29,6 +32,10 @@ describe("expectedFor", () => {
 });
 
 describe("expectedMonth / forecast", () => {
+  it("leaves archived lines out of the forecast", () => {
+    const { rows } = forecast({ lines: [salary, { ...salary, id: "old", archived: true }], debts: [], fromMonth: "2026-10", toMonth: "2026-11", startBalance: 0 });
+    expect(rows[0].net).toBe(261130);
+  });
   it("counts unlinked debts as their own expense", () => {
     const m = expectedMonth([salary], debtSchedules([debt]), "2026-11");
     expect(m).toMatchObject({ income: 261130, expense: -5000, net: 256130, byDebt: { d: -5000 } });

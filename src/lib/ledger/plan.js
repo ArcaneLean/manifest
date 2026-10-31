@@ -2,7 +2,8 @@
 // ARCHITECTURE.md §7 ("Ledger"). Pure functions over line and debt records.
 //
 // A line's expected amount for a month is, in order:
-// 1. 0 when the line's status is "dropped";
+// 1. 0 when the line's status is "dropped", or the line is archived
+//    (a retired category no longer feeds the forecast);
 // 2. an explicit per-month override, when there is one;
 // 3. minus the linked debts' scheduled payments, when a debt is linked to
 //    the line (the bank books those payments onto that category);
@@ -33,7 +34,7 @@ export function debtSchedules(debts) {
 }
 
 export function expectedFor(line, month, schedules = []) {
-  if (line.status === "dropped") return 0;
+  if (line.status === "dropped" || line.archived) return 0;
   const override = line.overrides?.[month];
   if (override != null) return override;
   const linked = schedules.filter((s) => s.debt.lineId === line.id);
