@@ -1,7 +1,10 @@
 // Balances, month totals and reconciliation for Ledger — see ARCHITECTURE.md
 // §7 ("Ledger"). Pure functions over the stored records:
-//   balance { key, month, accountId, amount, checkedOn }  (one per account per month)
-//   actual  { key, month, lineId, amount }                (one per line per month)
+//   balance { key, month, accountId, amount, checkedOn, unchecked? }  (one per account per month)
+//   actual  { key, month, lineId, amount, unchecked? }                (one per line per month)
+// `unchecked` marks an assumed value that couldn't be verified at the
+// close (an account without easy access, the expenses taken from it): it
+// counts in the totals, but is left out of the reconciliation.
 //   month   { month, bankNet, closedAt }
 import { addMonths } from "./month.js";
 import { owedAt } from "./debt.js";
@@ -17,7 +20,7 @@ export function balancesAt(accounts, balances, month) {
   for (const b of balances) {
     if (b.month > month) continue;
     const prev = out[b.accountId];
-    if (!prev || b.month > prev.month) out[b.accountId] = { amount: b.amount, month: b.month, checkedOn: b.checkedOn };
+    if (!prev || b.month > prev.month) out[b.accountId] = { amount: b.amount, month: b.month, checkedOn: b.checkedOn, unchecked: !!b.unchecked };
   }
   const known = new Set(accounts.map((a) => a.id));
   for (const id of Object.keys(out)) {
@@ -59,9 +62,11 @@ export function debtTotal(debts, month) {
 }
 
 // Accounts whose latest check is older than `days` before `todayISO`.
+// Unchecked balances aren't checks.
 export function staleAccounts(accounts, balances, todayISO, days = 35) {
   const latest = {};
   for (const b of balances) {
+    if (b.unchecked) continue;
     const checked = b.checkedOn || `${b.month}-28`;
     if (!latest[b.accountId] || checked > latest[b.accountId]) latest[b.accountId] = checked;
   }
@@ -69,23 +74,42 @@ export function staleAccounts(accounts, balances, todayISO, days = 35) {
   return accounts.filter((a) => !a.archived && (!latest[a.id] || latest[a.id] < cutoff)).map((a) => a.id);
 }
 
-// { income, expense, net, byLine, count } from the month's recorded actuals.
-// Income/expense is by the line's kind, so a refund on an expense line
-// lowers that month's expense rather than counting as income.
+// { income, expense, net, byLine, count, unchecked: { lines, net } } from
+// the month's recorded actuals. Income/expense is by the line's kind, so a
+// refund on an expense line lowers that month's expense rather than
+// counting as income. Unchecked actuals are in the totals and also summed
+// on their own (`unchecked.lines` holds their line ids).
 export function actualMonth(lines, actuals, month) {
   const kind = Object.fromEntries(lines.map((l) => [l.id, l.kind]));
   const byLine = {};
   let income = 0;
   let expense = 0;
   let count = 0;
+  const unchecked = { lines: [], net: 0 };
   for (const a of actuals) {
     if (a.month !== month || a.amount == null) continue;
     byLine[a.lineId] = a.amount;
     count += 1;
     if (kind[a.lineId] === "income") income += a.amount;
     else expense += a.amount;
+    if (a.unchecked) {
+      unchecked.lines.push(a.lineId);
+      unchecked.net += a.amount;
+    }
   }
-  return { income, expense, net: income + expense, byLine, count };
+  return { income, expense, net: income + expense, byLine, count, unchecked };
+}
+
+// Accounts whose balance for `month` itself is marked unchecked, and how
+// much of the total's change since the previous month is theirs.
+export function uncheckedBalances(accounts, balances, month) {
+  const ids = balances.filter((b) => b.month === month && b.unchecked).map((b) => b.accountId);
+  const known = new Set(accounts.map((a) => a.id));
+  const accountIds = ids.filter((id) => known.has(id));
+  const now = balancesAt(accounts, balances, month);
+  const before = balancesAt(accounts, balances, addMonths(month, -1));
+  const delta = accountIds.reduce((s, id) => s + (now[id]?.amount ?? 0) - (before[id]?.amount ?? 0), 0);
+  return { accounts: accountIds, delta };
 }
 
 // Everything the month view's summary needs. `delta` is how much the total
@@ -93,6 +117,9 @@ export function actualMonth(lines, actuals, month) {
 // part of that change the recorded lines don't account for. Both are null
 // without balances for both months. `vsBank` compares the lines with the
 // net total the bank reports for the month, when that's been entered.
+// Unchecked values are left out of both cross-checks: `unexplained` is
+// the change of the checked accounts − the net of the checked lines, and
+// `vsBank` uses the checked lines only. `unchecked` lists what was left out.
 export function monthSummary({ accounts, balances, lines, actuals, debts, months }, month) {
   const actual = actualMonth(lines, actuals, month);
   const expected = expectedMonth(lines, debtSchedules(debts), month);
@@ -103,6 +130,16 @@ export function monthSummary({ accounts, balances, lines, actuals, debts, months
   const hasPrev = balances.some((b) => b.month <= prevMonth);
   const delta = hasNow && hasPrev ? assetTotals(accounts, balances, month).total - assetTotals(accounts, balances, prevMonth).total : null;
   const net = actual.count ? actual.net : bankNet;
+  const uncheckedBal = uncheckedBalances(accounts, balances, month);
+  const checkedLines = actual.net - actual.unchecked.net;
+  const checkedNet = actual.count ? checkedLines : bankNet;
+  const unchecked = {
+    accounts: uncheckedBal.accounts,
+    lines: actual.unchecked.lines,
+    count: uncheckedBal.accounts.length + actual.unchecked.lines.length,
+    delta: uncheckedBal.delta,
+    net: actual.unchecked.net,
+  };
   return {
     month,
     actual,
@@ -110,8 +147,9 @@ export function monthSummary({ accounts, balances, lines, actuals, debts, months
     bankNet,
     net,
     delta,
-    unexplained: delta !== null && net !== null ? delta - net : null,
-    vsBank: bankNet !== null && actual.count ? actual.net - bankNet : null,
+    unexplained: delta !== null && checkedNet !== null ? delta - uncheckedBal.delta - checkedNet : null,
+    vsBank: bankNet !== null && actual.count ? checkedLines - bankNet : null,
+    unchecked,
     closedAt: record?.closedAt ?? null,
   };
 }

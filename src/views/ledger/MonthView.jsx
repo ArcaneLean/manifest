@@ -11,7 +11,10 @@ import { debtSchedule, paymentIn } from "../../lib/ledger/debt.js";
 import { formatCents } from "../../lib/ledger/money.js";
 import { Page, Header, Section, Stats, linkStyle, primaryBtnStyle, secondaryBtnStyle } from "../hours/ui.jsx";
 import { fieldStyle } from "../work/ui.jsx";
-import { Money, AmountInput, FigureRow, LogLine, lineLabel, sortLines, groupByCategory, sortAccounts, smallDim } from "./ui.jsx";
+import { Money, AmountInput, FigureRow, LogLine, CheckToggle, uncheckedInputStyle, lineLabel, sortLines, groupByCategory, sortAccounts, smallDim } from "./ui.jsx";
+
+const uncheckedTag = <span style={{ color: COLORS.amber }}>unchecked</span>;
+const pair = (a, b) => <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>{a}{b}</span>;
 
 function NewLineForm({ store, kind: initialKind, onDone }) {
   const [category, setCategory] = useState("");
@@ -55,6 +58,7 @@ function LinesSection({ label, kind, lines, store, month, summary, onOpenLine })
           {(group.lines.length > 1 || group.lines[0].source) && <div style={{ ...smallDim, marginTop: "6px" }}>{group.category}</div>}
           {group.lines.map((line) => {
             const expected = summary.expected.byLine[line.id] ?? 0;
+            const unchecked = summary.unchecked.lines.includes(line.id);
             return (
               <FigureRow
                 key={line.id}
@@ -63,16 +67,19 @@ function LinesSection({ label, kind, lines, store, month, summary, onOpenLine })
                 sub={
                   <>
                     expected <Money cents={expected} />
+                    {unchecked && <> · {uncheckedTag}</>}
                   </>
                 }
-                right={
+                right={pair(
+                  <CheckToggle unchecked={unchecked} onChange={(u) => store.setActualUnchecked(month, line.id, u, expected)} />,
                   <AmountInput
                     value={summary.actual.byLine[line.id] ?? null}
                     defaultSign={kind === "income" ? 1 : -1}
                     placeholder={kind === "income" ? "+0,00" : "-0,00"}
                     onCommit={(v) => store.setActual(month, line.id, v)}
+                    style={unchecked ? uncheckedInputStyle : undefined}
                   />
-                }
+                )}
               />
             );
           })}
@@ -90,7 +97,7 @@ function LinesSection({ label, kind, lines, store, month, summary, onOpenLine })
 }
 
 export default function MonthView({ store, month, replace, onOpenLine }) {
-  const { accounts, balances, lines, actuals, debts, setBalance, updateMonth, setDebtPayment } = store;
+  const { accounts, balances, lines, actuals, debts, setBalance, setBalanceUnchecked, updateMonth, setDebtPayment } = store;
   const [log, setLog] = useState(null);
   const summary = monthSummary(store, month);
   const prev = addMonths(month, -1);
@@ -107,6 +114,7 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
     const parts = [`$ closed ${monthLabel(month)}`];
     if (summary.net !== null) parts.push(`net ${formatCents(summary.net, { signed: true })}`);
     if (summary.unexplained !== null) parts.push(`Δ ${formatCents(summary.unexplained, { signed: true })}`);
+    if (summary.unchecked.count) parts.push(`${summary.unchecked.count} unchecked`);
     setLog(parts.join(" · "));
   };
 
@@ -120,7 +128,10 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
     <Page>
       <Header
         title={monthLongLabel(month)}
-        sub={summary.closedAt ? `closed ${new Date(summary.closedAt).toLocaleDateString("en-GB")}` : "open"}
+        sub={[
+          summary.closedAt ? `closed ${new Date(summary.closedAt).toLocaleDateString("en-GB")}` : "open",
+          summary.unchecked.count ? `${summary.unchecked.count} unchecked` : null,
+        ].filter(Boolean).join(" · ")}
         left={nav(prev)}
         right={nav(addMonths(month, 1))}
       />
@@ -130,6 +141,7 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
         {shownAccounts.map((a) => {
           const b = now[a.id];
           const p = before[a.id];
+          const unchecked = summary.unchecked.accounts.includes(a.id);
           return (
             <FigureRow
               key={a.id}
@@ -138,14 +150,26 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
                 b?.carried ? (
                   <>
                     carried from {monthLabel(b.month)}
+                    {b.unchecked && " (unchecked)"}
                   </>
                 ) : p ? (
                   <>
                     {monthLabel(prev)} <Money cents={p.amount} />
+                    {unchecked && <> · {uncheckedTag}</>}
                   </>
+                ) : unchecked ? (
+                  uncheckedTag
                 ) : null
               }
-              right={<AmountInput value={b && !b.carried ? b.amount : null} placeholder={b ? "same" : "0,00"} onCommit={(v) => setBalance(month, a.id, v)} />}
+              right={pair(
+                <CheckToggle unchecked={unchecked} disabled={!b} onChange={(u) => setBalanceUnchecked(month, a.id, u, b?.amount)} />,
+                <AmountInput
+                  value={b && !b.carried ? b.amount : null}
+                  placeholder={b ? "same" : "0,00"}
+                  onCommit={(v) => setBalance(month, a.id, v)}
+                  style={unchecked ? uncheckedInputStyle : undefined}
+                />
+              )}
             />
           );
         })}
@@ -195,9 +219,29 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
           <FigureRow label="balance change" sub={summary.delta === null ? `needs balances for ${monthLabel(prev)} and ${monthLabel(month)}` : "all accounts vs last month"} right={<Money cents={summary.delta} signed />} />
           <FigureRow
             label="unexplained"
-            sub="balance change − net of the lines (or the bank's net)"
+            sub={summary.unchecked.count ? "checked balances' change − net of the checked lines" : "balance change − net of the lines (or the bank's net)"}
             right={<Money cents={summary.unexplained} signed color={summary.unexplained ? COLORS.amber : COLORS.sage} />}
           />
+          {summary.unchecked.count > 0 && (
+            <FigureRow
+              label={<span style={{ color: COLORS.amber }}>unchecked · {summary.unchecked.count}</span>}
+              sub="assumed values, left out of the checks above"
+              right={
+                <span style={{ ...smallDim, textAlign: "right" }}>
+                  {summary.unchecked.accounts.length > 0 && (
+                    <div>
+                      {summary.unchecked.accounts.length} balance(s){summary.delta !== null && <> <Money cents={summary.unchecked.delta} signed /></>}
+                    </div>
+                  )}
+                  {summary.unchecked.lines.length > 0 && (
+                    <div>
+                      {summary.unchecked.lines.length} line(s) <Money cents={summary.unchecked.net} signed />
+                    </div>
+                  )}
+                </span>
+              }
+            />
+          )}
           {summary.vsBank !== null && (
             <FigureRow label="lines vs bank net" sub="should be zero if every category was entered" right={<Money cents={summary.vsBank} signed color={summary.vsBank ? COLORS.amber : COLORS.sage} />} />
           )}

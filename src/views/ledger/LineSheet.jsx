@@ -162,7 +162,7 @@ export function LineSheet({ line, store, onClose }) {
         <Field label={`actuals · avg ${recent.length} mo`}>
           <FigureRow label="average" right={<Money cents={avg} />} style={{ borderBottom: `1px solid ${COLORS.border}` }} />
           {recent.map((a) => (
-            <FigureRow key={a.key} label={monthLabel(a.month)} right={<Money cents={a.amount} dim />} />
+            <FigureRow key={a.key} label={monthLabel(a.month)} sub={a.unchecked ? "unchecked" : null} right={<Money cents={a.amount} dim />} />
           ))}
         </Field>
       )}
