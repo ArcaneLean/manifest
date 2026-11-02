@@ -112,13 +112,41 @@ export function uncheckedBalances(accounts, balances, month) {
   return { accounts: accountIds, delta };
 }
 
+// The accounts the lines are booked from: the payment (`checking`)
+// accounts, whose balance change is the bank's in − out for the month,
+// transfers included. Savings move only by transfers from them, which are
+// lines of their own, so they're left out. Without any payment account,
+// every account counts.
+export function paymentAccounts(accounts) {
+  const pay = accounts.filter((a) => a.type === "checking");
+  return pay.length ? pay : accounts;
+}
+
+// { accountId: { net, unchecked } } for each payment account with a balance
+// of its own for `month` and for the month before: its balance change,
+// which is the net the bank reports for that account.
+export function accountNets(accounts, balances, month) {
+  const now = balancesAt(accounts, balances, month);
+  const before = balancesAt(accounts, balances, addMonths(month, -1));
+  const out = {};
+  for (const a of accounts) {
+    if (a.type !== "checking") continue;
+    const n = now[a.id];
+    const b = before[a.id];
+    if (!n || n.carried || !b || b.carried) continue;
+    out[a.id] = { net: n.amount - b.amount, unchecked: n.unchecked || b.unchecked };
+  }
+  return out;
+}
+
 // Everything the month view's summary needs. `delta` is how much the total
-// of all accounts changed since the previous month; `unexplained` is the
-// part of that change the recorded lines don't account for. Both are null
+// of all accounts changed since the previous month; `paymentDelta` the
+// same for the payment accounts only; `unexplained` is the part of the
+// payment accounts' change the recorded lines don't account for. Both are null
 // without balances for both months. `vsBank` compares the lines with the
 // net total the bank reports for the month, when that's been entered.
 // Unchecked values are left out of both cross-checks: `unexplained` is
-// the change of the checked accounts − the net of the checked lines, and
+// the change of the checked payment accounts − the net of the checked lines, and
 // `vsBank` uses the checked lines only. `unchecked` lists what was left out.
 export function monthSummary({ accounts, balances, lines, actuals, debts, months }, month) {
   const actual = actualMonth(lines, actuals, month);
@@ -130,6 +158,12 @@ export function monthSummary({ accounts, balances, lines, actuals, debts, months
   const hasPrev = balances.some((b) => b.month <= prevMonth);
   const delta = hasNow && hasPrev ? assetTotals(accounts, balances, month).total - assetTotals(accounts, balances, prevMonth).total : null;
   const net = actual.count ? actual.net : bankNet;
+  const pay = paymentAccounts(accounts);
+  const payIds = new Set(pay.map((a) => a.id));
+  const payHasNow = balances.some((b) => b.month === month && payIds.has(b.accountId));
+  const payHasPrev = balances.some((b) => b.month <= prevMonth && payIds.has(b.accountId));
+  const paymentDelta = payHasNow && payHasPrev ? assetTotals(pay, balances, month).total - assetTotals(pay, balances, prevMonth).total : null;
+  const uncheckedPay = uncheckedBalances(pay, balances, month);
   const uncheckedBal = uncheckedBalances(accounts, balances, month);
   const checkedLines = actual.net - actual.unchecked.net;
   const checkedNet = actual.count ? checkedLines : bankNet;
@@ -147,7 +181,9 @@ export function monthSummary({ accounts, balances, lines, actuals, debts, months
     bankNet,
     net,
     delta,
-    unexplained: delta !== null && checkedNet !== null ? delta - uncheckedBal.delta - checkedNet : null,
+    paymentDelta,
+    nets: accountNets(accounts, balances, month),
+    unexplained: paymentDelta !== null && checkedNet !== null ? paymentDelta - uncheckedPay.delta - checkedNet : null,
     vsBank: bankNet !== null && actual.count ? checkedLines - bankNet : null,
     unchecked,
     closedAt: record?.closedAt ?? null,

@@ -1127,15 +1127,23 @@ These came up in the process and were deliberately deferred — listed here so t
        history. A month opens the **month view**, which is also the monthly close: end-of-month
        balances, the bank's net, the actual per line with its expected amount next to it, debt
        payments, then a summary: actual vs expected, the balance change across all accounts,
-       and the **unexplained** part (balance change − net of the lines), plus lines vs the
-       bank's net. "close" stamps `closedAt` and logs a `$ closed …` line. Every field saves
+       and the **unexplained** part, plus lines vs the bank's net.
+       **Payment accounts**: the lines are booked from the `checking` accounts (both banks'
+       payment accounts; Rabobank's transactions go on the bank's categories by hand), and a
+       payment account's balance change is the net the bank reports for it, transfers
+       included. So unexplained = change of the payment accounts − net of the lines: a savings
+       transfer is a line of its own ("Sparen") that lowers the payment account, while the
+       savings accounts and piggy banks, which only show balances, are left out. Without any
+       `checking` account every account counts. Each payment account's net is derived from
+       its balances and shown on its row, to check against the bank app; the typed bank net
+       is only needed for months without balances. "close" stamps `closedAt` and logs a `$ closed …` line. Every field saves
        on its own, so history can be corrected the same way.
        **Unchecked values**: each balance and line has a toggle to mark its value as assumed
        rather than looked up — an account without easy access, and the expenses that should
        have been taken from it. Marking one with nothing entered fills in the carried balance
        or the line's expected amount, which can then be corrected. Unchecked values count in
        every total (net worth, actual net, the month's figures) but are left out of the
-       reconciliation: unexplained = change of the checked accounts − net of the checked
+       reconciliation: unexplained = change of the checked payment accounts − net of the checked
        lines, and lines vs bank net uses the checked lines only. An unchecked balance is not a
        check for the `stale` badge, and a carried unchecked balance stays flagged. The month's
        header, the close log, Months (badge) and Now's accounts show what's still unchecked;
