@@ -281,7 +281,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Day Planner *(archived)* | Day Planner | none (single view) | day plan assembled from tasks/habits/day shapes, for today or any other day — see §7. Unwired from the launcher/`App.jsx` (unused in practice); code and IndexedDB stores (`dayshapes`, `dayoverrides`, `dayplans`) left in place rather than deleted, in case it's revisited |
 | Habits | Habits | none (single view) | tracked habits, streak/frequency heatmap, quick-log + backfill |
 | Work tasks | Now, Projects (→ project), Board, Log | bottom tab bar (4 tabs) + project drill-down | separate from the personal Task manager (a fork, not a mode); projects link to Hours booking codes and a task can start the Hours clock — see §7 "Work tasks" |
-| Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit records — see §7 "Shortlist" |
+| Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit+one-off-template records — see §7 "Shortlist" |
 | Ledger | Now, Months (→ month), Plan, Debts (→ debt) | bottom tab bar (4 tabs) + drill-down | personal accounting: assets, debts, monthly bank category totals, expected income/expenses and per-debt prognosis — see §7 "Ledger" |
 | Weather | Weather | none (single view) | cycling forecast cross-checked across independent models for the user's recurring ride windows — see §7 "Weather" |
 | *(not built)* | — | — | settings — see §7 |
@@ -820,10 +820,11 @@ These came up in the process and were deliberately deferred — listed here so t
     cover cases like a weekly timesheet (instantiated Monday, due Friday) when `dateField` is
     "both".
 
-- **Shortlist (implemented)**: a triage app over non-done tasks and all habits — three buckets,
+- **Shortlist (implemented)**: a triage app over non-done tasks, all habits and all one-off
+  templates — three buckets,
   `wont` / `could` / `want`, with `could` as the default. Deliberately a pure overlay (like Matrix
   over tasks): one IndexedDB row (`shortlist` store, `src/lib/shortlistRepo.js`) holding three
-  ordered arrays of compound ids (`"task:<id>"` / `"habit:<id>"`) — same ordered-id-array shape as
+  ordered arrays of compound ids (`"task:<id>"` / `"habit:<id>"` / `"template:<id>"`) — same ordered-id-array shape as
   `dayplans`' `habitIds`/`taskIds`, so manual drag-reorder within a bucket is just an array
   position. No task/habit fields are duplicated; only which bucket an item is in and its rank
   within it.
@@ -844,7 +845,13 @@ These came up in the process and were deliberately deferred — listed here so t
     `Checkbox` that calls `completeItem(id)`, the shortlist's thin wrapper around `useTasks`'
     `toggleTask`. Marking it done takes it out of scope immediately, so the same self-heal effect
     above drops it from its bucket on the next render rather than a bespoke removal path.
-  - **Tags**: each task row shows its `TagChip`s (habits carry none). A bar below the tab switcher
+  - **Templates**: one-off templates (`recurring: null`) are in scope as their own item type;
+    recurring templates are not, since their open anchor task is already in scope as a task.
+    A template row has a ▶ run button instead of a checkbox: `runItem(id)` creates a real task
+    from the template (same fields as the Templates view's "run") and inserts it into the
+    template's own bucket directly after the template, so a template triaged as `want` yields a
+    task already in `want`. The template stays where it is — it's reusable.
+  - **Tags**: each task and template row shows its `TagChip`s (habits carry none). A bar below the tab switcher
     lists every tag present among the active bucket's rows, each with the same ✕/✓ buttons as a
     row — `moveTag(tagId, fromBucket, toBucket)` is the bulk sibling of `moveItem`, stepping every
     item in `fromBucket` carrying that tag to `toBucket` together, in their existing relative
