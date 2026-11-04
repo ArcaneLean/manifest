@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { balancesAt, assetTotals, monthSummary, nextMonthToClose, staleAccounts, knownMonths, debtTotal } from "./summary.js";
+import { balancesAt, assetTotals, accountNets, monthSummary, nextMonthToClose, staleAccounts, knownMonths, debtTotal } from "./summary.js";
 
 const accounts = [
   { id: "pay", available: true },
@@ -93,5 +93,52 @@ describe("months", () => {
   it("totals debts owed at the end of a month", () => {
     const debt = { id: "d", kind: "fixed", rate: 0, fixedPayment: 100, checks: [{ month: "2026-08", balance: 1000 }], firstPaymentMonth: "2026-08" };
     expect(debtTotal([debt], "2026-08")).toBe(900);
+  });
+});
+
+describe("payment accounts", () => {
+  // ASN and Rabobank payment accounts; a savings account with piggy banks
+  // filled by a "Sparen" line booked on ASN.
+  const accounts3 = [
+    { id: "asn", type: "checking", available: true },
+    { id: "rabo", type: "checking", available: true },
+    { id: "piggy", type: "savings", available: false },
+  ];
+  const balances3 = [
+    { month: "2026-09", accountId: "asn", amount: 100000 },
+    { month: "2026-09", accountId: "rabo", amount: 20000 },
+    { month: "2026-09", accountId: "piggy", amount: 500000 },
+    { month: "2026-10", accountId: "asn", amount: 130000 },
+    { month: "2026-10", accountId: "rabo", amount: 15000 },
+    { month: "2026-10", accountId: "piggy", amount: 540000 },
+  ];
+  const lines3 = [
+    { id: "salary", kind: "income" },
+    { id: "food", kind: "expense" },
+    { id: "sparen", kind: "expense" },
+  ];
+  const actuals3 = [
+    { month: "2026-10", lineId: "salary", amount: 260000 },
+    { month: "2026-10", lineId: "food", amount: -195000 },
+    { month: "2026-10", lineId: "sparen", amount: -40000 },
+  ];
+  const store3 = { accounts: accounts3, balances: balances3, lines: lines3, actuals: actuals3, debts: [], months: [] };
+
+  it("derives each payment account's net from its balances", () => {
+    expect(accountNets(accounts3, balances3, "2026-10")).toEqual({ asn: { net: 30000, unchecked: false }, rabo: { net: -5000, unchecked: false } });
+    // no balance of its own before October: nothing to derive
+    expect(accountNets(accounts3, balances3, "2026-09")).toEqual({});
+  });
+  it("reconciles the lines with the payment accounts, so a savings transfer line balances", () => {
+    const s = monthSummary(store3, "2026-10");
+    expect(s.delta).toBe(65000);
+    expect(s.paymentDelta).toBe(25000);
+    expect(s.unexplained).toBe(0);
+  });
+  it("leaves an unchecked payment balance out of the reconciliation", () => {
+    const b = balances3.map((x) => (x.month === "2026-10" && x.accountId === "rabo" ? { ...x, unchecked: true } : x));
+    const s = monthSummary({ ...store3, balances: b }, "2026-10");
+    expect(s.unexplained).toBe(30000 - 25000);
+    expect(s.nets.rabo.unchecked).toBe(true);
   });
 });

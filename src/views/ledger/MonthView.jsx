@@ -108,6 +108,8 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
   const visible = sortLines(lines.filter((l) => !l.archived || hasActual.has(l.id)));
   const shownAccounts = sortAccounts(accounts).filter((a) => !a.archived || (now[a.id] && !now[a.id].carried));
   const activeDebts = debts.filter((d) => !d.archived);
+  // Only worth its own row when some accounts (savings) aren't payment accounts.
+  const hasPaymentAccounts = accounts.some((a) => a.type === "checking") && accounts.some((a) => a.type !== "checking");
 
   const close = () => {
     updateMonth(month, { closedAt: Date.now() });
@@ -155,6 +157,12 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
                 ) : p ? (
                   <>
                     {monthLabel(prev)} <Money cents={p.amount} />
+                    {summary.nets[a.id] && (
+                      <>
+                        {" · net "}
+                        <Money cents={summary.nets[a.id].net} signed />
+                      </>
+                    )}
                     {unchecked && <> · {uncheckedTag}</>}
                   </>
                 ) : unchecked ? (
@@ -178,7 +186,7 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
       <Section label="bank · net total for the month">
         <FigureRow
           label="net per bank"
-          sub="optional: the month's in − out as the bank reports it"
+          sub="optional: for months without balances — the payment accounts' in − out as the bank reports it"
           right={<AmountInput value={summary.bankNet} onCommit={(v) => updateMonth(month, { bankNet: v })} placeholder="±0,00" />}
         />
       </Section>
@@ -217,9 +225,12 @@ export default function MonthView({ store, month, replace, onOpenLine }) {
         />
         <div style={{ marginTop: "14px" }}>
           <FigureRow label="balance change" sub={summary.delta === null ? `needs balances for ${monthLabel(prev)} and ${monthLabel(month)}` : "all accounts vs last month"} right={<Money cents={summary.delta} signed />} />
+          {hasPaymentAccounts && (
+            <FigureRow label="payment accounts" sub="their change vs last month — what the lines are booked from" right={<Money cents={summary.paymentDelta} signed />} />
+          )}
           <FigureRow
             label="unexplained"
-            sub={summary.unchecked.count ? "checked balances' change − net of the checked lines" : "balance change − net of the lines (or the bank's net)"}
+            sub={summary.unchecked.count ? "checked payment accounts' change − net of the checked lines" : `${hasPaymentAccounts ? "payment accounts'" : "balance"} change − net of the lines (or the bank's net)`}
             right={<Money cents={summary.unexplained} signed color={summary.unexplained ? COLORS.amber : COLORS.sage} />}
           />
           {summary.unchecked.count > 0 && (
