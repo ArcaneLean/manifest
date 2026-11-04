@@ -87,6 +87,7 @@ export function useTasks() {
     };
     setTasks((prev) => [...prev, task]);
     putTask(task);
+    return task;
   };
 
   // Deleting a recurring template's open anchor is treated as "skip this

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Check, GripVertical, RotateCcw, ListTodo, Flame } from "lucide-react";
+import { X, Check, GripVertical, RotateCcw, ListTodo, Flame, FileText, Play } from "lucide-react";
 import { COLORS } from "../theme/colors.js";
 import { Segmented } from "../components/Segmented.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
@@ -15,6 +15,8 @@ const TABS = [
   { key: "could", label: "could do" },
   { key: "want", label: "want to do" },
 ];
+
+const ITEM_ICONS = { task: ListTodo, habit: Flame, template: FileText };
 
 // Which bucket each button on a row (or each tag group's bulk button) moves
 // toward — omitted at either edge since there's nowhere further to go (see
@@ -35,7 +37,7 @@ function arrayMove(list, from, to) {
 
 export default function ShortlistView() {
   const [activeTab, setActiveTab] = usePersistentState("manifest.shortlist.active", "could");
-  const { loading, bucketItems, moveItem, completeItem, moveTag, reorderBucket, reset } = useShortlist();
+  const { loading, bucketItems, moveItem, completeItem, runItem, moveTag, reorderBucket, reset } = useShortlist();
   const { tags } = useTags();
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [rows, setRows] = useState([]);
@@ -220,7 +222,7 @@ export default function ShortlistView() {
 
           {rows.map((item, index) => {
             const isDragging = dragIndex === index;
-            const Icon = item.itemType === "habit" ? Flame : ListTodo;
+            const Icon = ITEM_ICONS[item.itemType] || ListTodo;
             const itemTags = (item.tags || []).map(tagById).filter(Boolean);
             return (
               <div
@@ -269,6 +271,26 @@ export default function ShortlistView() {
                 </div>
 
                 <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  {item.itemType === "template" && (
+                    <button
+                      onClick={() => runItem(item.id)}
+                      aria-label="run template — add it as a task"
+                      title="run template — add it as a task"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "6px",
+                        background: COLORS.amber,
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Play size={12} color={COLORS.bg} fill={COLORS.bg} />
+                    </button>
+                  )}
                   {back && (
                     <button
                       onClick={() => moveItem(item.id, back)}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTasks } from "./useTasks.js";
 import { useHabits } from "./useHabits.js";
+import { useTemplates } from "./useTemplates.js";
 import { getShortlistOrder, putShortlistOrder } from "../lib/shortlistRepo.js";
 import { isScheduled } from "../lib/taskDates.js";
 import { toISO } from "../lib/dateUtils.js";
@@ -16,9 +17,10 @@ function withoutId(order, id) {
   };
 }
 
-// Shortlist is a pure overlay over the task/habit stores (see
-// ARCHITECTURE.md §7 "Shortlist") — only non-done, already-started tasks
-// and all habits are in scope. A task with a future startDate is out of
+// Shortlist is a pure overlay over the task/habit/template stores (see
+// ARCHITECTURE.md §7 "Shortlist") — only non-done, already-started tasks,
+// all habits and all one-off templates are in scope. Recurring templates
+// stay out: their open anchor task is already in scope as a task. A task with a future startDate is out of
 // scope entirely (same treatment as a completed task) since it isn't
 // actionable yet — see taskDates.js. On every load it self-heals: any
 // in-scope item missing from all three buckets is appended to "could"
@@ -26,8 +28,9 @@ function withoutId(order, id) {
 // step), and any id no longer backed by a live in-scope item (task
 // completed/deleted/not-yet-started, habit deleted) is dropped.
 export function useShortlist() {
-  const { tasks, loading: tasksLoading, toggleTask } = useTasks();
+  const { tasks, loading: tasksLoading, toggleTask, addTask } = useTasks();
   const { habits, loading: habitsLoading } = useHabits();
+  const { templates, loading: templatesLoading } = useTemplates();
   const [order, setOrder] = useState(null);
   const [orderLoading, setOrderLoading] = useState(true);
   const todayISO = toISO(new Date());
@@ -50,10 +53,13 @@ export function useShortlist() {
       .filter((t) => !t.done && !isScheduled(t, todayISO))
       .forEach((t) => map.set(`task:${t.id}`, { id: `task:${t.id}`, itemType: "task", text: t.text, tags: t.tags || [] }));
     habits.forEach((h) => map.set(`habit:${h.id}`, { id: `habit:${h.id}`, itemType: "habit", text: h.name, tags: [] }));
+    templates
+      .filter((t) => !t.recurring)
+      .forEach((t) => map.set(`template:${t.id}`, { id: `template:${t.id}`, itemType: "template", text: t.text, tags: t.tags || [], template: t }));
     return map;
-  }, [tasks, habits, todayISO]);
+  }, [tasks, habits, templates, todayISO]);
 
-  const loading = orderLoading || tasksLoading || habitsLoading;
+  const loading = orderLoading || tasksLoading || habitsLoading || templatesLoading;
 
   useEffect(() => {
     if (loading || !order) return;
@@ -95,10 +101,33 @@ export function useShortlist() {
     toggleTask(id.slice("task:".length));
   };
 
+  // Runs a one-off template: creates a real task from it (same as the
+  // Templates view's "run") and slots the new task into the template's own
+  // bucket, right after the template — so running a template you've
+  // triaged as "want to do" yields a task that's already in "want to do".
+  // The template itself stays put; it's reusable.
+  const runItem = (id) => {
+    const item = items.get(id);
+    if (!item || item.itemType !== "template") return;
+    const { text, urgent, important, tags: templateTags } = item.template;
+    const task = addTask({ text, urgent, important, tags: templateTags });
+    const taskId = `task:${task.id}`;
+    setOrder((prev) => {
+      if (!prev) return prev;
+      const bucket = BUCKETS.find((b) => prev[b].includes(id)) || "could";
+      const list = prev[bucket].slice();
+      list.splice(list.indexOf(id) + 1, 0, taskId);
+      const next = { ...prev, [bucket]: list };
+      putShortlistOrder(next);
+      return next;
+    });
+  };
+
   // Bulk version of moveItem: every item currently in `fromBucket` carrying
   // `tagId` steps to `toBucket` together, appended in their existing
   // relative order — the Shortlist's per-tag ✕/✓ buttons (ARCHITECTURE.md
-  // §7 "Shortlist"). Habits never match since they carry no tags.
+  // §7 "Shortlist"). Habits never match since they carry no tags; templates
+  // do.
   const moveTag = (tagId, fromBucket, toBucket) => {
     setOrder((prev) => {
       if (!prev) return prev;
@@ -137,5 +166,5 @@ export function useShortlist() {
     });
   };
 
-  return { loading, bucketItems, moveItem, completeItem, moveTag, reorderBucket, reset };
+  return { loading, bucketItems, moveItem, completeItem, runItem, moveTag, reorderBucket, reset };
 }
