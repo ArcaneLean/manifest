@@ -250,6 +250,28 @@ interface FinDebt {            // `finDebts`
   archived?: boolean;
   createdAt: number;
 }
+
+// Hobbies (§7) — anything done for fun: a manga, a book series, a code project, an idea.
+interface Pursuit {            // `pursuits`
+  id: string;
+  title: string;
+  kind: string;                // free text, lowercased ("manga", "book series", "code")
+  status: "idea" | "queued" | "active" | "paused" | "done" | "dropped";
+  where: string;               // free-text progress ("ch 87", "book 2, halfway")
+  notes: string;
+  link: string | null;
+  rank: number;                // manual order within its status list (the queue)
+  items: {                     // planned work / features / the books of a series, in order
+    id: string;
+    title: string;
+    status: "todo" | "doing" | "done" | "dropped";
+    note: string;
+  }[];
+  createdAt: number;
+  startedAt: number | null;    // first time it went active
+  finishedAt: number | null;   // set only while done/dropped
+  statusChangedAt: number;
+}
 ```
 
 Hours' numbers (paid, logged, earned, booked, the per-code bank) are all derived at render
@@ -283,6 +305,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Work tasks | Now, Projects (→ project), Board, Log | bottom tab bar (4 tabs) + project drill-down | separate from the personal Task manager (a fork, not a mode); projects link to Hours booking codes and a task can start the Hours clock — see §7 "Work tasks" |
 | Shortlist | Shortlist | 3-tab switch (won't/could/want) | won't-do/could-do/want-to-do triage over the *same* task+habit+one-off-template records — see §7 "Shortlist" |
 | Ledger | Now, Months (→ month), Plan, Debts (→ debt) | bottom tab bar (4 tabs) + drill-down | personal accounting: assets, debts, monthly bank category totals, expected income/expenses and per-debt prognosis — see §7 "Ledger" |
+| Hobbies | Now, Next, Ideas, Done | bottom tab bar (4 tabs) | entertainment / hobby project tracker: what's on the go, the queue, ideas, and the record; each entry has a free-text "where I am" and its own items (planned work, features, books of a series) — see §7 "Hobbies" |
 | Weather | Weather | none (single view) | cycling forecast cross-checked across independent models for the user's recurring ride windows — see §7 "Weather" |
 | *(not built)* | — | — | settings — see §7 |
 
@@ -299,6 +322,7 @@ each app owns its own internal navigation and is otherwise independent.
 | Projects | projects, bookingcodes (+ worklog/bookings to tell which codes are used) | projects, bookingcodes | CRUD, 8-color curated palette (same `ColorPicker`/palette as Tags), plus each project's booking codes |
 | Work (now/projects/board/log) | workTasks, workProjects, workTags, worklog, projects, bookingcodes | workTasks, workProjects, workTags, worklog (start/stop working) | `src/views/work/`; all data loaded once in `WorkTasksApp` and passed down, like Hours |
 | Ledger (now/months/month/plan/debts) | finAccounts, finBalances, finLines, finActuals, finMonths, finDebts | same | `src/views/ledger/`; all data loaded once in `LedgerApp` and passed down, like Hours |
+| Hobbies (now/next/ideas/done) | pursuits | pursuits | `src/views/hobbies/`; loaded once in `HobbiesApp` and passed down, like Work |
 
 All prototypes so far are standalone artifacts with duplicated seed data and duplicated
 component logic (`Toggle`, `TagChip`, quadrant helpers, date helpers). Consolidating these into
@@ -310,7 +334,7 @@ since several views already depend on the *same* underlying task records.
 ### 6.1 Personal data (unchanged)
 
 - IndexedDB is the only thing the personal apps (Task manager, Countdowns, Habits, Shortlist,
-  Weather, Ledger) read/write during normal use.
+  Weather, Ledger, Hobbies) read/write during normal use.
 - Periodically (or on-demand), a full snapshot is pushed to Google Drive — one file per
   device, not one shared file, so this is **backup, not cross-device sync**: opening the app
   on a second device does not pull the first device's data. This was a deliberate choice over
@@ -1177,6 +1201,39 @@ These came up in the process and were deliberately deferred — listed here so t
   - **Later / not built**: charts (net worth and forecast lines); importing a bank CSV export
     to fill a month's category totals; scenarios (comparing alternative plans); linking debt
     key dates into Countdowns.
+
+- **Hobbies (implemented)**: an entertainment / hobby project tracker — the manga being read,
+  the hobby code projects and their planned features, ideas for new projects, the book series
+  queued for after. Deliberately loose: nothing here is an obligation, so there are no dates,
+  priorities or estimates. Local-first like the other personal apps.
+  - **One entity, `Pursuit`**, with a free-text `kind` (suggested from kinds already used, most
+    used first, then a few defaults) rather than per-kind fields. Progress is a free-text
+    `where` ("ch 87", "book 2, halfway") — no counters.
+  - **Items** live inside the pursuit (an ordered array, like Work tasks' `checklist`): planned
+    work / features for a project, or the books of a series — a series is one entry with its
+    books as items, not one entry per book. Item status todo · doing · done · dropped; the
+    checkbox toggles todo ↔ done, tapping an item edits its title, status, note and order. Rows
+    show a `done/total` tally (dropped items don't count) and the current item (first doing,
+    else first todo: `▸ hobbies app` / `next: The Way of Kings`).
+  - **Status** idea · queued · active · paused · done · dropped. `startedAt` is stamped the first
+    time it goes active and kept through pauses; `finishedAt` is set only while done/dropped.
+    Any status change moves the record to the end of its new list (`rank`). Several things can
+    be active at once (reading and coding).
+  - **Views** (bottom tab bar):
+    1. **Now** (default): active, then paused (dimmed), each with pause/resume; a footer points
+       at the head of the queue.
+    2. **Next**: the queue in manual order — drag the grip (same pointer-capture pattern as
+       Shortlist); ▶ starts one.
+    3. **Ideas**: newest first, with a quick-add line; each row can be queued or started.
+    4. **Done**: done and dropped, latest finish first, with the finish date.
+    Everything else (status, where, kind, items, link, notes, delete) is in the edit sheet.
+  - **Storage**: DB v15 adds `pursuits` (plain `ensureStore`, no migration); it's in the
+    Drive/file backup automatically.
+  - **Code**: pure logic in `src/lib/hobbies/model.js` (status/timestamps, ranks and per-tab
+    order, item helpers, tally) with `model.test.js`. Repo `pursuitsRepo.js`, hook
+    `usePursuits`, views in `src/views/hobbies/`, app `HobbiesApp.jsx`.
+  - **Later / not built**: tags or filtering by kind; a counter for progress if free text ever
+    feels too loose; linking a code project to its repo's issues.
 
 - **PR previews (implemented)**: every open same-repo PR is deployed next to the real app, and
   the launcher's branch icon switches between them.

@@ -9,6 +9,7 @@ import ShortlistApp from "./apps/ShortlistApp.jsx";
 import WeatherApp from "./apps/WeatherApp.jsx";
 import WorkTasksApp from "./apps/WorkTasksApp.jsx";
 import LedgerApp from "./apps/LedgerApp.jsx";
+import HobbiesApp from "./apps/HobbiesApp.jsx";
 import { UpdatePrompt } from "./UpdatePrompt.jsx";
 import { PreviewBand } from "./components/PreviewBand.jsx";
 
@@ -23,6 +24,7 @@ const APPS = {
   shortlist: ShortlistApp,
   weather: WeatherApp,
   ledger: LedgerApp,
+  hobbies: HobbiesApp,
 };
 
 // Home screen launches into one of three apps; each app owns its own
