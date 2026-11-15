@@ -10,7 +10,7 @@ import { CHANNEL, dbNameFor } from "./channel.js";
 // bump / migration just to add a store.
 // PR previews get their own database (`manifest@pr-<n>`) — see channel.js.
 const DB_NAME = dbNameFor(CHANNEL);
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 
 let dbPromise = null;
 
@@ -178,6 +178,11 @@ export function getDB() {
         ensureStore(db, "finActuals", { keyPath: "key" });
         ensureStore(db, "finMonths", { keyPath: "month" });
         ensureStore(db, "finDebts", { keyPath: "id" });
+        // v15: Hobbies app — see ARCHITECTURE.md §7 ("Hobbies"). One row per
+        // pursuit (a manga, a book series, a code project, an idea), with its
+        // planned work / features / books kept inside it as an ordered `items`
+        // array rather than a second store.
+        ensureStore(db, "pursuits", { keyPath: "id" });
         if (db.objectStoreNames.contains("weatherCache")) db.deleteObjectStore("weatherCache");
         db.createObjectStore("weatherCache", { keyPath: "key" });
       },

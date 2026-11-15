@@ -51,6 +51,11 @@ describe("DB v12 upgrade", () => {
     for (const name of LEDGER_STORES) expect(db.objectStoreNames.contains(name)).toBe(true);
   });
 
+  it("also creates the v15 Hobbies store", async () => {
+    const db = await getDB();
+    expect(db.objectStoreNames.contains("pursuits")).toBe(true);
+  });
+
   it("migrates worklog segments to codes and keeps logged totals", async () => {
     const db = await getDB();
     const codes = await db.getAll("bookingcodes");
